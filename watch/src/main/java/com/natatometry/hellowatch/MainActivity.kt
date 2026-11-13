@@ -3,7 +3,7 @@
  * most up to date changes to the libraries and their usages.
  */
 
-package com.natatometry.hellowatch.presentation
+package com.natatometry.hellowatch
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -23,8 +23,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.tooling.preview.devices.WearDevices
-import com.natatometry.hellowatch.R
-import com.natatometry.hellowatch.presentation.theme.HelloWatchTheme
+import com.natatometry.hellowatch.theme.HelloWatchTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

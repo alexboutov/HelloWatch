@@ -1,4 +1,4 @@
-package com.natatometry.hellowatch.presentation.theme
+package com.natatometry.hellowatch.theme
 
 import androidx.compose.runtime.Composable
 import androidx.wear.compose.material.MaterialTheme

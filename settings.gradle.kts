@@ -20,5 +20,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "HelloWatch"
-include(":app")
-include(":mobile")
+include(":watch")
+include(":phone")
