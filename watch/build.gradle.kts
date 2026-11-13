@@ -5,6 +5,14 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+    }
     namespace = "com.natatometry.hellowatch"
     compileSdk {
         version = release(36)

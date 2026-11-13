@@ -4,10 +4,24 @@
     <selectionStates>
       <SelectionState runConfigName="watch">
         <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2026-11-13T14:34:58.189212200Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=401XX9XA10037359" />
+            </handle>
+          </Target>
+        </DropdownSelection>
         <DialogSelection />
       </SelectionState>
       <SelectionState runConfigName="phone">
         <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2026-11-13T14:34:58.189212200Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=401XX9XA10037359" />
+            </handle>
+          </Target>
+        </DropdownSelection>
         <DialogSelection />
       </SelectionState>
     </selectionStates>
