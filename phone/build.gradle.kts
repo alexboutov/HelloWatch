@@ -38,6 +38,7 @@ android {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
@@ -53,4 +54,5 @@ dependencies {
     androidTestImplementation(libs.ui.test.junit4)
     debugImplementation(libs.ui.test.manifest)
     debugImplementation(libs.ui.tooling)
+
 }

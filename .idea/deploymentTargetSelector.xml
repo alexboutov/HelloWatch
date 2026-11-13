@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="watch">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-11-13T14:34:58.189212200Z">
+        <DropdownSelection timestamp="2026-11-13T22:10:22.841131900Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=401XX9XA10037359" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\alexb\.android\avd\Wear_OS_Small_Round.avd" />
             </handle>
           </Target>
         </DropdownSelection>
@@ -15,10 +15,10 @@
       </SelectionState>
       <SelectionState runConfigName="phone">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-11-13T14:34:58.189212200Z">
+        <DropdownSelection timestamp="2026-11-13T16:39:39.630486400Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=401XX9XA10037359" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\alexb\.android\avd\Medium_Phone.avd" />
             </handle>
           </Target>
         </DropdownSelection>
