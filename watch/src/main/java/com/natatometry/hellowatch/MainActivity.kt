@@ -1,5 +1,6 @@
 package com.natatometry.hellowatch
 
+import android.view.MotionEvent
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -8,8 +9,11 @@ import android.hardware.SensorManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.MaterialTheme
@@ -45,6 +53,18 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        var isWaterLocked = false
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        // Swallow 100% of raw hardware touch/swipe events while recording
+        if (isWaterLocked) {
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -58,23 +78,30 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun WatchSwimRecorderScreen() {
     val context = LocalContext.current
     var statusText by remember { mutableStateOf("Idle: Waiting for GO SWIM") }
     var isRecording by remember { mutableStateOf(false) }
+    LaunchedEffect(isRecording) {
+        MainActivity.isWaterLocked = isRecording
+    }
     var startTimeMs by remember { mutableLongStateOf(0L) }
     var tMaxSec by remember { mutableStateOf(3.0) }
     var sampleCount by remember { mutableStateOf(0) }
 
-    // Holds recorded CSV rows in memory during the swim window
     val csvRows = remember { mutableListOf<String>() }
     var sessionHeader by remember { mutableStateOf("") }
 
-    // Latest sensor readings (updated asynchronously by SensorManager)
     val latestAcc = remember { FloatArray(3) }
     val latestGyro = remember { FloatArray(3) }
     val latestMag = remember { FloatArray(3) }
+
+    // Block system back/swipe gestures while recording
+    BackHandler(enabled = isRecording) {
+        // Intentionally empty to ignore water-triggered back gestures
+    }
 
     fun finishAndSendCsv() {
         if (!isRecording) return
@@ -99,7 +126,7 @@ fun WatchSwimRecorderScreen() {
         val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
         Wearable.getDataClient(context).putDataItem(putDataReq)
             .addOnSuccessListener {
-                statusText = "Sent $totalSamples rows!"
+                statusText = "Sent $totalSamples rows! (Unlocked)"
             }
             .addOnFailureListener { e ->
                 statusText = "Send Err: ${e.message}"
@@ -127,7 +154,6 @@ fun WatchSwimRecorderScreen() {
                 when (event.sensor.type) {
                     Sensor.TYPE_ACCELEROMETER -> {
                         System.arraycopy(event.values, 0, latestAcc, 0, 3)
-                        // Record a unified 10-column row on each accelerometer tick (~50 Hz)
                         val row = String.format(
                             Locale.US,
                             "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
@@ -147,7 +173,7 @@ fun WatchSwimRecorderScreen() {
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        val samplingPeriod = SensorManager.SENSOR_DELAY_GAME // ~50 Hz (0.02s)
+        val samplingPeriod = SensorManager.SENSOR_DELAY_GAME
         accSensor?.let { sensorManager.registerListener(sensorListener, it, samplingPeriod) }
         gyroSensor?.let { sensorManager.registerListener(sensorListener, it, samplingPeriod) }
         magSensor?.let { sensorManager.registerListener(sensorListener, it, samplingPeriod) }
@@ -200,31 +226,47 @@ fun WatchSwimRecorderScreen() {
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 26.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(if (isRecording) Color(0xFF1A0808) else Color.Black)
+            .pointerInput(isRecording) {
+                if (isRecording) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+            }
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 26.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = if (isRecording) "WATER LOCKED" else "Swim Sensor",
+                    color = if (isRecording) Color(0xFFFF6B6B) else Color.White,
+                    style = MaterialTheme.typography.title3.copy(fontWeight = FontWeight.Bold),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.body2,
+                    textAlign = TextAlign.Center
+                )
+            }
             Text(
-                text = "Swim Sensor",
-                style = MaterialTheme.typography.title3,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.body2,
+                text = if (isRecording) "Samples: $sampleCount (Touch Disabled)" else "Screen Unlocked",
+                style = MaterialTheme.typography.caption1,
                 textAlign = TextAlign.Center
             )
         }
-
-        Text(
-            text = if (isRecording) "Samples: $sampleCount" else "Ready",
-            style = MaterialTheme.typography.caption1,
-            textAlign = TextAlign.Center
-        )
     }
 }
