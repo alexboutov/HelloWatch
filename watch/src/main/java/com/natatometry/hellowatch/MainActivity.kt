@@ -1,6 +1,7 @@
 package com.natatometry.hellowatch
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -25,13 +26,17 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
-import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.natatometry.hellowatch.theme.HelloWatchTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             HelloWatchTheme {
                 Scaffold(timeText = { TimeText() }) {
@@ -48,25 +53,30 @@ fun WatchHomeScreen() {
     var statusText by remember { mutableStateOf("Ready to send data") }
     var pingCount by remember { mutableStateOf(0) }
 
-    // Listen for incoming messages from the Phone
+    // Listen for incoming DataClient updates from the Phone
     DisposableEffect(context) {
-        val messageClient = Wearable.getMessageClient(context)
-        val listener = MessageClient.OnMessageReceivedListener { event ->
-            if (event.path == "/ping_from_phone") {
-                val payload = String(event.data, Charsets.UTF_8)
-                statusText = "Got: $payload"
+        val dataClient = Wearable.getDataClient(context)
+        val listener = DataClient.OnDataChangedListener { dataEvents ->
+            for (event in dataEvents) {
+                if (event.type == DataEvent.TYPE_CHANGED &&
+                    event.dataItem.uri.path == "/phone_ping"
+                ) {
+                    val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    val payload = dataMap.getString("payload") ?: "Empty"
+                    statusText = "Got: $payload"
+                }
             }
         }
-        messageClient.addListener(listener)
+        dataClient.addListener(listener)
         onDispose {
-            messageClient.removeListener(listener)
+            dataClient.removeListener(listener)
         }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -86,16 +96,15 @@ fun WatchHomeScreen() {
             pingCount++
             val message = "Watch Sensor #$pingCount"
             statusText = "Sent #$pingCount"
-            Wearable.getNodeClient(context).connectedNodes.addOnSuccessListener { nodes ->
-                if (nodes.isEmpty()) {
-                    statusText = "No phone paired"
-                } else {
-                    for (node in nodes) {
-                        Wearable.getMessageClient(context)
-                            .sendMessage(node.id, "/ping_from_watch", message.toByteArray(Charsets.UTF_8))
-                    }
-                }
+            val putDataMapReq = PutDataMapRequest.create("/sensor_ping").apply {
+                dataMap.putString("payload", message)
+                dataMap.putLong("timestamp", System.currentTimeMillis())
             }
+            val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+            Wearable.getDataClient(context).putDataItem(putDataReq)
+                .addOnFailureListener { e ->
+                    statusText = "Err: ${e.message}"
+                }
         }) {
             Text(text = "Ping")
         }
