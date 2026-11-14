@@ -76,22 +76,24 @@ fun WatchHomeScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 28.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(horizontal = 24.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "HelloPhone on Watch",
-            style = MaterialTheme.typography.title3,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.body2,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(10.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "HelloPhone",
+                style = MaterialTheme.typography.title3,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center
+            )
+        }
+
         Button(onClick = {
             pingCount++
             val message = "Watch Sensor #$pingCount"
