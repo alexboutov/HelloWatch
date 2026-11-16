@@ -106,10 +106,12 @@ class SwimSensorManager(
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
                 System.arraycopy(event.values, 0, latestAcc, 0, 3)
+                val vibrating = SystemClock.elapsedRealtime() - lastVibMs < VIB_DURATION_MS
                 val row = String.format(
                     Locale.US,
-                    "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                    "%.2f,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
                     elapsedSec,
+                    if (vibrating) "[v]" else "",
                     latestAcc[0], latestAcc[1], latestAcc[2],
                     latestGyro[0], latestGyro[1], latestGyro[2],
                     latestMag[0], latestMag[1], latestMag[2]

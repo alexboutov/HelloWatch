@@ -137,7 +137,7 @@ class SwimRecordingService : Service() {
 
         val fullCsv = buildString {
             appendLine(sessionHeader)
-            appendLine("Timestamp,ax,ay,az,gx,gy,gz,mx,my,mz")
+            appendLine("t,VIB,ax,ay,az,gx,gy,gz,mx,my,mz")
             for (row in csvRows) {
                 appendLine(row)
             }
