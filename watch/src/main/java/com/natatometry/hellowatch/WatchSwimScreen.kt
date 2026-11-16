@@ -29,6 +29,8 @@ import androidx.wear.compose.material.Text
 fun WatchSwimRecorderScreen() {
     val context = LocalContext.current
     val state by SwimRecordingService.uiState.collectAsState()
+    // M0 step 1: key events received by MainActivity.dispatchKeyEvent
+    val keyLog by MainActivity.keyLog.collectAsState()
 
     LaunchedEffect(Unit) {
         SwimRecordingService.startService(context)
@@ -72,6 +74,15 @@ fun WatchSwimRecorderScreen() {
                     textAlign = TextAlign.Center
                 )
             }
+
+            // M0 step 1: key-code check output (most recent line last)
+            Text(
+                text = if (keyLog.isEmpty()) "Keys: press a button" else keyLog.joinToString("\n"),
+                color = Color(0xFF7CFC9A),
+                style = MaterialTheme.typography.caption3,
+                textAlign = TextAlign.Center
+            )
+
             Text(
                 text = if (state.isRecording) "Samples: ${state.sampleCount} (Touch Disabled)" else "Screen Unlocked",
                 style = MaterialTheme.typography.caption1,
