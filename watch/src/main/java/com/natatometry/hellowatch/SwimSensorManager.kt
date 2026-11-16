@@ -33,7 +33,6 @@ class SwimSensorManager(
     @Volatile var CoolDown: Double = 1.5
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val accSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val linAccSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     private val magSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
@@ -63,13 +62,12 @@ class SwimSensorManager(
         lastVibMs = Long.MIN_VALUE / 2
 
         val samplingPeriod = SensorManager.SENSOR_DELAY_GAME
-        accSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
         gyroSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
         magSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
         if (linAccSensor != null) {
             sensorManager.registerListener(this, linAccSensor, samplingPeriod)
         } else {
-            Log.w(TAG, "TYPE_LINEAR_ACCELERATION not available; vibration trigger disabled")
+            Log.w(TAG, "TYPE_LINEAR_ACCELERATION not available; no samples will be recorded")
         }
     }
 
@@ -79,10 +77,7 @@ class SwimSensorManager(
         vibrator?.cancel()
     }
 
-    private fun maybeVibrate(linAcc: FloatArray) {
-        val mag = sqrt(
-            linAcc[0] * linAcc[0] + linAcc[1] * linAcc[1] + linAcc[2] * linAcc[2]
-        )
+    private fun maybeVibrate(mag: Float) {
         if (mag <= VibThrsh) return
 
         val nowMs = SystemClock.elapsedRealtime()
@@ -104,21 +99,25 @@ class SwimSensorManager(
         }
 
         when (event.sensor.type) {
-            Sensor.TYPE_ACCELEROMETER -> {
+            Sensor.TYPE_LINEAR_ACCELERATION -> {
                 System.arraycopy(event.values, 0, latestAcc, 0, 3)
+                val accMag = sqrt(
+                    latestAcc[0] * latestAcc[0] + latestAcc[1] * latestAcc[1] + latestAcc[2] * latestAcc[2]
+                )
+                maybeVibrate(accMag)
                 val vibrating = SystemClock.elapsedRealtime() - lastVibMs < VIB_DURATION_MS
                 val row = String.format(
                     Locale.US,
-                    "%.2f,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                    "%.2f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
                     elapsedSec,
                     if (vibrating) "[v]" else "",
+                    accMag,
                     latestAcc[0], latestAcc[1], latestAcc[2],
                     latestGyro[0], latestGyro[1], latestGyro[2],
                     latestMag[0], latestMag[1], latestMag[2]
                 )
                 onSampleRecorded(row)
             }
-            Sensor.TYPE_LINEAR_ACCELERATION -> maybeVibrate(event.values)
             Sensor.TYPE_GYROSCOPE -> System.arraycopy(event.values, 0, latestGyro, 0, 3)
             Sensor.TYPE_MAGNETIC_FIELD -> System.arraycopy(event.values, 0, latestMag, 0, 3)
         }
