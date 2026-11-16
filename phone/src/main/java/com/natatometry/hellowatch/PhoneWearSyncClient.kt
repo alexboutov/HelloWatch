@@ -19,6 +19,14 @@ class PhoneWearSyncClient(
     private val onCsvSaved: (fileName: String, rowCount: Int, preview: String) -> Unit,
     private val onError: (prefix: String, message: String?) -> Unit
 ) {
+    companion object {
+        /** Persistent swim parameters, synced to every connected watch. */
+        const val PATH_SWIM_PARAMS = "/swim_params"
+        const val KEY_TMAX = "tmax"
+        const val KEY_AZIMUTH = "azimuth"
+        const val KEY_TIMESTAMP = "timestamp"
+    }
+
     private val dataClient = Wearable.getDataClient(context)
 
     private val listener = DataClient.OnDataChangedListener { dataEvents ->
@@ -59,6 +67,32 @@ class PhoneWearSyncClient(
         dataClient.removeListener(listener)
     }
 
+    /**
+     * Stores the swim parameters as a persistent DataItem. The item stays in the
+     * Data Layer and is delivered to each watch, including one that connects later.
+     * The swim itself is started on the watch.
+     */
+    fun sendSwimParams(
+        tMaxVal: Double,
+        azimuthDeg: Double,
+        onSuccess: () -> Unit,
+        onFailure: (String?) -> Unit
+    ) {
+        val putDataMapReq = PutDataMapRequest.create(PATH_SWIM_PARAMS).apply {
+            dataMap.putDouble(KEY_TMAX, tMaxVal)
+            dataMap.putDouble(KEY_AZIMUTH, azimuthDeg)
+            dataMap.putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+        }
+        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+        dataClient.putDataItem(putDataReq)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onFailure(e.message) }
+    }
+
+    /**
+     * Temporary: phone-side GO SWIM / STOP SWIM command, unchanged from the previous
+     * version. Kept until the watch button start is confirmed, then removed.
+     */
     fun sendSwimCommand(
         command: String,
         tMaxVal: Double,

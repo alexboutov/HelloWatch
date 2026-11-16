@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -23,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -49,8 +51,33 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    fun sendParams() {
+        val tMaxVal = controller.parseTMax()
+        if (tMaxVal == null) {
+            controller.onError("Params Err", "Tmax must be a number > 0")
+            return
+        }
+        val azimuthDeg = controller.parseAzimuth()
+        if (azimuthDeg == null) {
+            controller.onError("Params Err", "Azimuth must be a number from 0 to 360")
+            return
+        }
+        controller.onParamsSending(tMaxVal, azimuthDeg)
+        syncClient.sendSwimParams(
+            tMaxVal = tMaxVal,
+            azimuthDeg = azimuthDeg,
+            onSuccess = { controller.onParamsSent(tMaxVal, azimuthDeg) },
+            onFailure = { msg -> controller.onError("Params Err", msg) }
+        )
+    }
+
+    // Temporary: phone-side GO SWIM / STOP SWIM, kept until the watch button start is confirmed.
     fun triggerCommand(command: String) {
         val tMaxVal = controller.parseTMax()
+        if (tMaxVal == null) {
+            controller.onError("Command Err", "Tmax must be a number > 0")
+            return
+        }
         controller.onCommandSending(command, tMaxVal)
         syncClient.sendSwimCommand(
             command = command,
@@ -79,10 +106,27 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             onValueChange = { controller.tMaxInput = it },
             label = { Text("Tmax (seconds)") },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(0.6f)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = controller.azimuthInput,
+            onValueChange = { controller.azimuthInput = it },
+            label = { Text("Azimuth (deg, magnetic)") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(0.6f)
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        Button(onClick = { sendParams() }) {
+            Text("Send params")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Temporary: phone-side start/stop, removed once the watch button start is confirmed.
         Row(
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()

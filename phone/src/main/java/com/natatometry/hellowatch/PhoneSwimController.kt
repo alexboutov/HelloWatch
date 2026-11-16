@@ -6,12 +6,29 @@ import androidx.compose.runtime.setValue
 
 class PhoneSwimController {
     var tMaxInput by mutableStateOf("3.0")
+    var azimuthInput by mutableStateOf("")
     var statusText by mutableStateOf("Ready to record swim")
     var csvPreview by mutableStateOf("")
 
-    fun parseTMax(): Double {
-        return tMaxInput.toDoubleOrNull() ?: 3.0
+    /** Tmax in seconds; null if the input is not a finite number > 0. */
+    fun parseTMax(): Double? {
+        return tMaxInput.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
     }
+
+    /** Azimuth in degrees (magnetic, clockwise from north); null if not in 0..360. */
+    fun parseAzimuth(): Double? {
+        return azimuthInput.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 && it <= 360.0 }
+    }
+
+    fun onParamsSending(tMaxVal: Double, azimuthDeg: Double) {
+        statusText = "Sending params (Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg)..."
+    }
+
+    fun onParamsSent(tMaxVal: Double, azimuthDeg: Double) {
+        statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg"
+    }
+
+    // ---- Temporary: phone-side GO SWIM / STOP SWIM, kept until the watch button start is confirmed ----
 
     fun onCommandSending(command: String, tMaxVal: Double) {
         statusText = "Sending: $command (Tmax=${tMaxVal}s)..."
