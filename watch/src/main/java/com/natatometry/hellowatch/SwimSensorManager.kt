@@ -91,7 +91,8 @@ class SwimSensorManager(
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!active) return
-        val elapsedSec = (System.currentTimeMillis() - startTimeMs) / 1000.0
+        val nowEpochMs = System.currentTimeMillis()
+        val elapsedSec = (nowEpochMs - startTimeMs) / 1000.0
         if (elapsedSec > tMaxSec) {
             active = false
             onMaxDurationReached()
@@ -108,13 +109,18 @@ class SwimSensorManager(
                 val vibrating = SystemClock.elapsedRealtime() - lastVibMs < VIB_DURATION_MS
                 val row = String.format(
                     Locale.US,
-                    "%.2f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                    // t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs
+                    // P (projection onto Azimuth) stays empty until M1.
+                    // epochMs = milliseconds since 2020-01-01 00:00:00 UTC.
+                    "%.2f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d",
                     elapsedSec,
                     if (vibrating) "[v]" else "",
                     accMag,
                     latestAcc[0], latestAcc[1], latestAcc[2],
                     latestGyro[0], latestGyro[1], latestGyro[2],
-                    latestMag[0], latestMag[1], latestMag[2]
+                    latestMag[0], latestMag[1], latestMag[2],
+                    "",
+                    nowEpochMs - SwimCsv.EPOCH_2020_MS
                 )
                 onSampleRecorded(row)
             }

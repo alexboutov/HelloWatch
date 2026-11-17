@@ -126,7 +126,8 @@ class SwimRecordingService : Service() {
         val durationMs = (maxDurationSec * 1000).toLong()
         wakeLock.acquire(durationMs + WAKE_LOCK_MARGIN_MS)
 
-        sessionHeader = SwimCsv.sessionHeader(Date())
+        // The azimuth stored at the start is the one this session is recorded with.
+        sessionHeader = SwimCsv.sessionHeader(Date(), paramAzimuthDeg)
 
         val startMs = System.currentTimeMillis()
         isRecording = true
