@@ -2,18 +2,15 @@ package com.natatometry.hellowatch
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -71,19 +68,32 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    // Temporary: phone-side GO SWIM / STOP SWIM, kept until the watch button start is confirmed.
+    // Temporary: phone-side GO SWIM, kept until the watch button start is confirmed.
+    // It first sends the params, then the command, so the watch has both.
     fun triggerCommand(command: String) {
         val tMaxVal = controller.parseTMax()
         if (tMaxVal == null) {
             controller.onError("Command Err", "Tmax must be a number > 0")
             return
         }
+        val azimuthDeg = controller.parseAzimuth()
+        if (azimuthDeg == null) {
+            controller.onError("Command Err", "Azimuth must be a number from 0 to 360")
+            return
+        }
         controller.onCommandSending(command, tMaxVal)
-        syncClient.sendSwimCommand(
-            command = command,
+        syncClient.sendSwimParams(
             tMaxVal = tMaxVal,
-            onSuccess = { controller.onCommandSent(command, tMaxVal) },
-            onFailure = { msg -> controller.onError("Command Err", msg) }
+            azimuthDeg = azimuthDeg,
+            onSuccess = {
+                syncClient.sendSwimCommand(
+                    command = command,
+                    tMaxVal = tMaxVal,
+                    onSuccess = { controller.onCommandSent(command, tMaxVal) },
+                    onFailure = { msg -> controller.onError("Command Err", msg) }
+                )
+            },
+            onFailure = { msg -> controller.onError("Params Err", msg) }
         )
     }
 
@@ -126,21 +136,9 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Temporary: phone-side start/stop, removed once the watch button start is confirmed.
-        Row(
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Button(onClick = { triggerCommand("GO SWIM") }) {
-                Text("GO SWIM")
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Button(
-                onClick = { triggerCommand("STOP SWIM") },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("STOP SWIM")
-            }
+        // Temporary: phone-side start, removed once the watch button start is confirmed.
+        Button(onClick = { triggerCommand("GO SWIM") }) {
+            Text("GO SWIM")
         }
 
         Spacer(modifier = Modifier.height(20.dp))

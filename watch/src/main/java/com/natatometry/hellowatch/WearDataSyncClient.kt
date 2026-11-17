@@ -1,43 +1,91 @@
 package com.natatometry.hellowatch
 
 import android.content.Context
+import android.net.Uri
 import com.google.android.gms.wearable.Asset
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 
 class WearDataSyncClient(
     context: Context,
-    private val onGoSwim: (Double) -> Unit,
-    private val onStopSwim: () -> Unit
+    private val onParams: (tMaxSec: Double, azimuthDeg: Double) -> Unit,
+    private val onGoSwim: (Double) -> Unit
 ) {
+    companion object {
+        private const val PATH_SWIM_PARAMS = "/swim_params"
+        private const val KEY_TMAX = "tmax"
+        private const val KEY_AZIMUTH = "azimuth"
+        private const val KEY_TIMESTAMP = "timestamp"
+    }
+
     private val dataClient = Wearable.getDataClient(context)
 
     private val listener = DataClient.OnDataChangedListener { dataEvents ->
         for (event in dataEvents) {
-            if (event.type == DataEvent.TYPE_CHANGED &&
-                event.dataItem.uri.path == "/swim_command"
-            ) {
-                val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
-                val cmd = dataMap.getString("command") ?: ""
-                if (cmd == "GO SWIM") {
-                    val tMax = dataMap.getDouble("tmax", 3.0)
-                    onGoSwim(tMax)
-                } else if (cmd == "STOP SWIM") {
-                    onStopSwim()
+            if (event.type != DataEvent.TYPE_CHANGED) continue
+            when (event.dataItem.uri.path) {
+                PATH_SWIM_PARAMS -> {
+                    deliverParams(DataMapItem.fromDataItem(event.dataItem).dataMap)
+                }
+                // Temporary: phone-side GO SWIM, kept until the watch button start is confirmed.
+                // STOP SWIM is ignored: nothing stops a recording before Tmax.
+                "/swim_command" -> {
+                    val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    val cmd = dataMap.getString("command") ?: ""
+                    if (cmd == "GO SWIM") {
+                        onGoSwim(dataMap.getDouble("tmax", 3.0))
+                    }
                 }
             }
         }
     }
 
+    private fun deliverParams(dataMap: DataMap) {
+        if (!dataMap.containsKey(KEY_TMAX) || !dataMap.containsKey(KEY_AZIMUTH)) return
+        onParams(dataMap.getDouble(KEY_TMAX), dataMap.getDouble(KEY_AZIMUTH))
+    }
+
     fun register() {
         dataClient.addListener(listener)
+        fetchStoredParams()
     }
 
     fun unregister() {
         dataClient.removeListener(listener)
+    }
+
+    /**
+     * Reads the persistent /swim_params item already in the Data Layer, so the
+     * parameters are available even if they were sent before this app started.
+     */
+    private fun fetchStoredParams() {
+        val uri = Uri.Builder()
+            .scheme(PutDataRequest.WEAR_URI_SCHEME)
+            .path(PATH_SWIM_PARAMS)
+            .build()
+        dataClient.getDataItems(uri).addOnSuccessListener { buffer ->
+            try {
+                var latest: DataMap? = null
+                var latestTs = Long.MIN_VALUE
+                for (item in buffer) {
+                    if (item.uri.path != PATH_SWIM_PARAMS) continue
+                    val dataMap = DataMapItem.fromDataItem(item).dataMap
+                    val ts = dataMap.getLong(KEY_TIMESTAMP, 0L)
+                    if (latest == null || ts > latestTs) {
+                        latest = dataMap
+                        latestTs = ts
+                    }
+                }
+                latest?.let { deliverParams(it) }
+            } finally {
+                buffer.release()
+            }
+        }
     }
 
     fun sendCsvAsset(

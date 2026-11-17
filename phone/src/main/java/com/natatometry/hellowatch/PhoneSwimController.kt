@@ -5,8 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 class PhoneSwimController {
-    var tMaxInput by mutableStateOf("3.0")
-    var azimuthInput by mutableStateOf("")
+    var tMaxInput by mutableStateOf("3")
+    var azimuthInput by mutableStateOf("0")
     var statusText by mutableStateOf("Ready to record swim")
     var csvPreview by mutableStateOf("")
 
@@ -28,18 +28,14 @@ class PhoneSwimController {
         statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg"
     }
 
-    // ---- Temporary: phone-side GO SWIM / STOP SWIM, kept until the watch button start is confirmed ----
+    // ---- Temporary: phone-side GO SWIM, kept until the watch button start is confirmed ----
 
     fun onCommandSending(command: String, tMaxVal: Double) {
         statusText = "Sending: $command (Tmax=${tMaxVal}s)..."
     }
 
     fun onCommandSent(command: String, tMaxVal: Double) {
-        statusText = if (command == "GO SWIM") {
-            "Watch recording (max ${tMaxVal}s)..."
-        } else {
-            "Sent STOP SWIM. Waiting for CSV..."
-        }
+        statusText = "Watch recording (max ${tMaxVal}s)..."
     }
 
     fun onCsvSaved(fileName: String, rowCount: Int, previewLines: String) {

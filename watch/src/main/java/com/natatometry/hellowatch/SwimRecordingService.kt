@@ -1,13 +1,10 @@
 package com.natatometry.hellowatch
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,12 +14,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 data class SwimUiState(
-    val statusText: String = "Idle: Waiting for GO SWIM",
+    val statusText: String = "Idle: hold MAP to start",
+    val paramsText: String = "Params: none (send from phone)",
     val isRecording: Boolean = false,
     val sampleCount: Int = 0
 )
@@ -30,8 +26,10 @@ data class SwimUiState(
 class SwimRecordingService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "swim_recording_channel"
-        private const val NOTIFICATION_ID = 1001
+        private const val ACTION_START_SWIM = "com.natatometry.hellowatch.action.START_SWIM"
+
+        /** Extra time the wake lock may be held after Tmax, for sending the CSV. */
+        private const val WAKE_LOCK_MARGIN_MS = 30_000L
 
         private val _uiState = MutableStateFlow(SwimUiState())
         val uiState = _uiState.asStateFlow()
@@ -44,6 +42,13 @@ class SwimRecordingService : Service() {
                 context.startService(intent)
             }
         }
+
+        /** Called by the activity on a long press of the start button. */
+        fun requestStart(context: Context) {
+            val intent = Intent(context, SwimRecordingService::class.java)
+                .setAction(ACTION_START_SWIM)
+            context.startService(intent)
+        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -51,23 +56,22 @@ class SwimRecordingService : Service() {
 
     private lateinit var sensorManager: SwimSensorManager
     private lateinit var syncClient: WearDataSyncClient
+    private lateinit var wakeLock: SwimWakeLock
 
     private val csvRows = mutableListOf<String>()
     private var sessionHeader = ""
     private var isRecording = false
 
+    // Latest swim parameters received from the phone (/swim_params).
+    private var paramTmaxSec: Double? = null
+    private var paramAzimuthDeg: Double? = null
+
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        startForeground(
-            NOTIFICATION_ID,
-            NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("HelloWatch Swim Sensor")
-                .setContentText("Listening for GO SWIM...")
-                .setSmallIcon(android.R.drawable.ic_media_play)
-                .setOngoing(true)
-                .build()
-        )
+        SwimNotification.createChannel(this)
+        startForeground(SwimNotification.NOTIFICATION_ID, SwimNotification.build(this))
+
+        wakeLock = SwimWakeLock(this)
 
         sensorManager = SwimSensorManager(
             context = this,
@@ -82,30 +86,53 @@ class SwimRecordingService : Service() {
 
         syncClient = WearDataSyncClient(
             context = this,
-            onGoSwim = { tMax -> startSession(tMax) },
-            onStopSwim = { finishSession() }
+            onParams = { tMaxSec, azimuthDeg -> storeParams(tMaxSec, azimuthDeg) },
+            // Temporary: phone-side GO SWIM, kept until the watch button start is confirmed.
+            onGoSwim = { tMax -> startSession(tMax) }
         )
         syncClient.register()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START_SWIM) {
+            startFromButton()
+        }
         return START_STICKY
+    }
+
+    private fun storeParams(tMaxSec: Double, azimuthDeg: Double) {
+        paramTmaxSec = tMaxSec
+        paramAzimuthDeg = azimuthDeg
+        // A running session keeps the Tmax it started with.
+        _uiState.value = _uiState.value.copy(
+            paramsText = "Tmax=${formatSeconds(tMaxSec)}s"
+        )
+    }
+
+    private fun startFromButton() {
+        if (isRecording) return
+        val tMaxSec = paramTmaxSec
+        if (tMaxSec == null || tMaxSec <= 0.0) {
+            _uiState.value = _uiState.value.copy(statusText = "No params: send from phone")
+            return
+        }
+        startSession(tMaxSec)
     }
 
     private fun startSession(maxDurationSec: Double) {
         if (isRecording) return
         csvRows.clear()
 
-        val now = Date()
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
-        val timeStr = SimpleDateFormat("HH-mm", Locale.US).format(now)
-        sessionHeader = "$dateStr  $timeStr"
+        val durationMs = (maxDurationSec * 1000).toLong()
+        wakeLock.acquire(durationMs + WAKE_LOCK_MARGIN_MS)
+
+        sessionHeader = SwimCsv.sessionHeader(Date())
 
         val startMs = System.currentTimeMillis()
         isRecording = true
         MainActivity.isWaterLocked = true
-        _uiState.value = SwimUiState(
-            statusText = "RECORDING (max ${maxDurationSec}s)",
+        _uiState.value = _uiState.value.copy(
+            statusText = "RECORDING (max ${formatSeconds(maxDurationSec)}s)",
             isRecording = true,
             sampleCount = 0
         )
@@ -114,13 +141,14 @@ class SwimRecordingService : Service() {
 
         timeoutJob?.cancel()
         timeoutJob = serviceScope.launch {
-            delay((maxDurationSec * 1000).toLong())
+            delay(durationMs)
             if (isRecording) {
                 finishSession()
             }
         }
     }
 
+    /** Reached only at Tmax (timeout job or sensor callback). Nothing else ends a session. */
     private fun finishSession() {
         if (!isRecording) return
         isRecording = false
@@ -129,42 +157,29 @@ class SwimRecordingService : Service() {
         sensorManager.stop()
 
         val totalSamples = csvRows.size
-        _uiState.value = SwimUiState(
+        _uiState.value = _uiState.value.copy(
             statusText = "Sending $totalSamples rows...",
             isRecording = false,
             sampleCount = totalSamples
         )
 
-        val fullCsv = buildString {
-            appendLine(sessionHeader)
-            appendLine("t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz")
-            for (row in csvRows) {
-                appendLine(row)
-            }
-        }
-
         syncClient.sendCsvAsset(
-            csvContent = fullCsv,
+            csvContent = SwimCsv.build(sessionHeader, csvRows),
             rowCount = totalSamples,
             onSuccess = {
                 _uiState.value = _uiState.value.copy(statusText = "Sent $totalSamples rows! (Unlocked)")
+                releaseWakeLock()
             },
             onFailure = { err ->
                 _uiState.value = _uiState.value.copy(statusText = "Send Err: $err")
+                releaseWakeLock()
             }
         )
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Swim Sensor Recording",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
-        }
+    private fun releaseWakeLock() {
+        // A new session may already have started and re-acquired the lock.
+        if (!isRecording) wakeLock.release()
     }
 
     override fun onDestroy() {
@@ -172,6 +187,7 @@ class SwimRecordingService : Service() {
         sensorManager.stop()
         syncClient.unregister()
         serviceScope.cancel()
+        wakeLock.release()
         super.onDestroy()
     }
 
