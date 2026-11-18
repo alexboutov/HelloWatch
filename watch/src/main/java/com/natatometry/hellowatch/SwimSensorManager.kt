@@ -5,15 +5,21 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
-import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Process
 import android.util.Log
 import java.util.Locale
+import kotlin.math.min
 import kotlin.math.sqrt
 
+/**
+ * Registers the swim sensors and builds one CSV row per TYPE_LINEAR_ACCELERATION sample.
+ *
+ * Events are delivered on a dedicated thread, not the main thread, with batching off.
+ * Row times (t, epochMs) come from SensorEvent.timestamp via SensorClock.
+ * Both callbacks are invoked ON THE SENSOR THREAD; the caller must be thread-safe.
+ */
 class SwimSensorManager(
     context: Context,
     private val onSampleRecorded: (String) -> Unit,
@@ -22,17 +28,9 @@ class SwimSensorManager(
 
     companion object {
         private const val TAG = "SwimSensorManager"
-        private const val VIB_DURATION_MS = 500L
         private const val METHOD_GRAVITY_MAG = "GRAVITY_MAG"
         private const val METHOD_ROTATION_VECTOR = "ROTATION_VECTOR"
     }
-
-    // ---- Tunable parameters ----
-    /** Linear-acceleration magnitude threshold (m/s^2) that triggers vibration. */
-    @Volatile var VibThrsh: Float = 2.0f
-
-    /** Minimum time (sec) between vibration starts. */
-    @Volatile var CoolDown: Double = 1.5
 
     /** Source of the rotation matrix for P, fixed per build: watchW = GRAVITY_MAG, watchH = ROTATION_VECTOR. */
     private val useGravityMag = BuildConfig.PROJECTION_METHOD == METHOD_GRAVITY_MAG
@@ -47,80 +45,71 @@ class SwimSensorManager(
     private val rotVecSensor =
         if (useRotationVector) sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) else null
 
-    private val vibrator: Vibrator? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)
-                ?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
+    /** Vibration rule; its tunables are vibration.VibThrsh and vibration.CoolDown. */
+    val vibration = SwimVibration(context)
 
     private val projector = AzimuthProjector(useRotationVector)
+    private val clock = SensorClock()
+    private var sensorThread: HandlerThread? = null
 
-    private val latestAcc = FloatArray(3)
     private val latestGyro = FloatArray(3)
     private val latestMag = FloatArray(3)
 
-    private var startTimeMs = 0L
+    // Sensor timestamps (ns) of the latest orientation inputs; 0 = none yet this session.
+    private var lastGravityNs = 0L
+    private var lastMagNs = 0L
+    private var lastRotVecNs = 0L
+
     private var tMaxSec = 3.0
-    private var active = false
-    private var lastVibMs = Long.MIN_VALUE / 2
+    @Volatile private var active = false
 
     /** azimuthDeg: lane direction for this session; null leaves the P column empty. */
-    fun start(startMs: Long, maxSec: Double, azimuthDeg: Double? = null) {
-        startTimeMs = startMs
+    fun start(maxSec: Double, azimuthDeg: Double? = null) {
         tMaxSec = maxSec
-        active = true
-        lastVibMs = Long.MIN_VALUE / 2
+        lastGravityNs = 0L
+        lastMagNs = 0L
+        lastRotVecNs = 0L
+        vibration.reset()
         projector.reset(if (useGravityMag || useRotationVector) azimuthDeg else null)
 
-        val samplingPeriod = SensorManager.SENSOR_DELAY_GAME
-        gyroSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
-        magSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
-        if (useGravityMag) {
-            if (gravitySensor != null) {
-                sensorManager.registerListener(this, gravitySensor, samplingPeriod)
-            } else {
-                Log.w(TAG, "TYPE_GRAVITY not available; P stays empty")
-            }
-        }
-        if (useRotationVector) {
-            if (rotVecSensor != null) {
-                sensorManager.registerListener(this, rotVecSensor, samplingPeriod)
-            } else {
-                Log.w(TAG, "TYPE_ROTATION_VECTOR not available; P stays empty")
-            }
-        }
-        if (linAccSensor != null) {
-            sensorManager.registerListener(this, linAccSensor, samplingPeriod)
-        } else {
-            Log.w(TAG, "TYPE_LINEAR_ACCELERATION not available; no samples will be recorded")
-        }
+        val thread = HandlerThread("swim_sensors", Process.THREAD_PRIORITY_DISPLAY)
+        thread.start()
+        sensorThread = thread
+        val handler = Handler(thread.looper)
+
+        clock.start()
+        active = true
+
+        register(gyroSensor, handler, "TYPE_GYROSCOPE")
+        register(magSensor, handler, "TYPE_MAGNETIC_FIELD")
+        if (useGravityMag) register(gravitySensor, handler, "TYPE_GRAVITY (P stays empty)")
+        if (useRotationVector) register(rotVecSensor, handler, "TYPE_ROTATION_VECTOR (P stays empty)")
+        register(linAccSensor, handler, "TYPE_LINEAR_ACCELERATION (no samples will be recorded)")
     }
 
+    /** SENSOR_DELAY_GAME, no batching (max report latency 0), delivery on the sensor thread. */
+    private fun register(sensor: Sensor?, handler: Handler, nameIfMissing: String) {
+        if (sensor == null) {
+            Log.w(TAG, "Not available: $nameIfMissing")
+            return
+        }
+        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME, 0, handler)
+    }
+
+    /** May be called from any thread, including the sensor thread. */
     fun stop() {
         active = false
         sensorManager.unregisterListener(this)
-        vibrator?.cancel()
-    }
-
-    private fun maybeVibrate(mag: Float) {
-        if (mag <= VibThrsh) return
-
-        val nowMs = SystemClock.elapsedRealtime()
-        if (nowMs - lastVibMs < (CoolDown * 1000.0).toLong()) return
-        lastVibMs = nowMs
-
-        vibrator?.vibrate(
-            VibrationEffect.createOneShot(VIB_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE)
-        )
+        vibration.cancel()
+        sensorThread?.quitSafely()
+        sensorThread = null
     }
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!active) return
-        val nowEpochMs = System.currentTimeMillis()
-        val elapsedSec = (nowEpochMs - startTimeMs) / 1000.0
+        val ts = event.timestamp
+        clock.observe(ts)
+        val elapsedSec = clock.elapsedSec(ts)
         if (elapsedSec > tMaxSec) {
             active = false
             onMaxDurationReached()
@@ -128,40 +117,55 @@ class SwimSensorManager(
         }
 
         when (event.sensor.type) {
-            Sensor.TYPE_LINEAR_ACCELERATION -> {
-                System.arraycopy(event.values, 0, latestAcc, 0, 3)
-                val accMag = sqrt(
-                    latestAcc[0] * latestAcc[0] + latestAcc[1] * latestAcc[1] + latestAcc[2] * latestAcc[2]
-                )
-                maybeVibrate(accMag)
-                val vibrating = SystemClock.elapsedRealtime() - lastVibMs < VIB_DURATION_MS
-                // P (m/s^2, 2 decimals) is empty on any row where R is not valid.
-                val p = projector.project(latestAcc[0], latestAcc[1], latestAcc[2])
-                val pText = if (p != null) String.format(Locale.US, "%.2f", p) else ""
-                val row = String.format(
-                    Locale.US,
-                    // t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs
-                    // epochMs = milliseconds since 2020-01-01 00:00:00 UTC.
-                    "%.2f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d",
-                    elapsedSec,
-                    if (vibrating) "[v]" else "",
-                    accMag,
-                    latestAcc[0], latestAcc[1], latestAcc[2],
-                    latestGyro[0], latestGyro[1], latestGyro[2],
-                    latestMag[0], latestMag[1], latestMag[2],
-                    pText,
-                    nowEpochMs - SwimCsv.EPOCH_2020_MS
-                )
-                onSampleRecorded(row)
-            }
+            Sensor.TYPE_LINEAR_ACCELERATION -> if (elapsedSec >= 0.0) recordSample(event.values, ts, elapsedSec)
             Sensor.TYPE_GYROSCOPE -> System.arraycopy(event.values, 0, latestGyro, 0, 3)
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 System.arraycopy(event.values, 0, latestMag, 0, 3)
                 projector.onMagnetic(event.values)
+                lastMagNs = ts
             }
-            Sensor.TYPE_GRAVITY -> projector.onGravity(event.values)
-            Sensor.TYPE_ROTATION_VECTOR -> projector.onRotationVector(event.values)
+            Sensor.TYPE_GRAVITY -> {
+                projector.onGravity(event.values)
+                lastGravityNs = ts
+            }
+            Sensor.TYPE_ROTATION_VECTOR -> {
+                projector.onRotationVector(event.values)
+                lastRotVecNs = ts
+            }
         }
+    }
+
+    /** One CSV row: t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR */
+    private fun recordSample(acc: FloatArray, ts: Long, elapsedSec: Double) {
+        val ax = acc[0]
+        val ay = acc[1]
+        val az = acc[2]
+        val accMag = sqrt(ax * ax + ay * ay + az * az)
+        val vibrating = vibration.onSample(accMag, ts)
+
+        // P (m/s^2) is empty on any row where R is not valid.
+        // dtR (ms) = sample time minus the time of the orientation input used for R
+        // (for GRAVITY_MAG: the older of the gravity and magnetic samples). Empty when P is empty.
+        val p = projector.project(ax, ay, az)
+        val pText = if (p != null) String.format(Locale.US, "%.2f", p) else ""
+        val orientationNs = if (useRotationVector) lastRotVecNs else min(lastGravityNs, lastMagNs)
+        val dtRText =
+            if (p != null) String.format(Locale.US, "%.1f", (ts - orientationNs) / 1_000_000.0) else ""
+
+        val row = String.format(
+            Locale.US,
+            "%.3f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s",
+            elapsedSec,
+            if (vibrating) "[v]" else "",
+            accMag,
+            ax, ay, az,
+            latestGyro[0], latestGyro[1], latestGyro[2],
+            latestMag[0], latestMag[1], latestMag[2],
+            pText,
+            clock.epochMs2020(ts),
+            dtRText
+        )
+        onSampleRecorded(row)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}

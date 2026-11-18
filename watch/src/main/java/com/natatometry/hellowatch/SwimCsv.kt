@@ -6,11 +6,17 @@ import java.util.Locale
 
 /** Builds the swim CSV sent to the phone. */
 object SwimCsv {
-    private const val COLUMNS = "t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs"
+    /**
+     * t       seconds from session start, from the sensor clock (3 decimals)
+     * P       projection onto the Azimuth, m/s^2; empty while the rotation matrix is not valid
+     * epochMs sample time, see EPOCH_2020_MS
+     * dtR     ms between the sample and the orientation input used for P; empty when P is empty
+     */
+    private const val COLUMNS = "t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR"
 
     /**
      * 2020-01-01 00:00:00 UTC in milliseconds since 1970. The epochMs column holds
-     * milliseconds since this instant: epochMs = System.currentTimeMillis() - EPOCH_2020_MS.
+     * milliseconds since this instant, for the moment the sample was taken.
      */
     const val EPOCH_2020_MS = 1_577_836_800_000L
 
