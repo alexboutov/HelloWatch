@@ -127,7 +127,8 @@ class SwimRecordingService : Service() {
         wakeLock.acquire(durationMs + WAKE_LOCK_MARGIN_MS)
 
         // The azimuth stored at the start is the one this session is recorded with.
-        sessionHeader = SwimCsv.sessionHeader(Date(), paramAzimuthDeg)
+        val azimuthDeg = paramAzimuthDeg
+        sessionHeader = SwimCsv.sessionHeader(Date(), azimuthDeg)
 
         val startMs = System.currentTimeMillis()
         isRecording = true
@@ -138,7 +139,7 @@ class SwimRecordingService : Service() {
             sampleCount = 0
         )
 
-        sensorManager.start(startMs, maxDurationSec)
+        sensorManager.start(startMs, maxDurationSec, azimuthDeg)
 
         timeoutJob?.cancel()
         timeoutJob = serviceScope.launch {

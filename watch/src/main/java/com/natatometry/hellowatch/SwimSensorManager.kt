@@ -23,6 +23,7 @@ class SwimSensorManager(
     companion object {
         private const val TAG = "SwimSensorManager"
         private const val VIB_DURATION_MS = 500L
+        private const val METHOD_GRAVITY_MAG = "GRAVITY_MAG"
     }
 
     // ---- Tunable parameters ----
@@ -32,10 +33,15 @@ class SwimSensorManager(
     /** Minimum time (sec) between vibration starts. */
     @Volatile var CoolDown: Double = 1.5
 
+    /** M1: P is computed on the GRAVITY_MAG build (watchW) only. */
+    private val useGravityMag = BuildConfig.PROJECTION_METHOD == METHOD_GRAVITY_MAG
+
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val linAccSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     private val magSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+    private val gravitySensor =
+        if (useGravityMag) sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY) else null
 
     private val vibrator: Vibrator? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -46,6 +52,8 @@ class SwimSensorManager(
             context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
 
+    private val projector = AzimuthProjector()
+
     private val latestAcc = FloatArray(3)
     private val latestGyro = FloatArray(3)
     private val latestMag = FloatArray(3)
@@ -55,15 +63,24 @@ class SwimSensorManager(
     private var active = false
     private var lastVibMs = Long.MIN_VALUE / 2
 
-    fun start(startMs: Long, maxSec: Double) {
+    /** azimuthDeg: lane direction for this session; null leaves the P column empty. */
+    fun start(startMs: Long, maxSec: Double, azimuthDeg: Double? = null) {
         startTimeMs = startMs
         tMaxSec = maxSec
         active = true
         lastVibMs = Long.MIN_VALUE / 2
+        projector.reset(if (useGravityMag) azimuthDeg else null)
 
         val samplingPeriod = SensorManager.SENSOR_DELAY_GAME
         gyroSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
         magSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
+        if (useGravityMag) {
+            if (gravitySensor != null) {
+                sensorManager.registerListener(this, gravitySensor, samplingPeriod)
+            } else {
+                Log.w(TAG, "TYPE_GRAVITY not available; P stays empty")
+            }
+        }
         if (linAccSensor != null) {
             sensorManager.registerListener(this, linAccSensor, samplingPeriod)
         } else {
@@ -107,10 +124,12 @@ class SwimSensorManager(
                 )
                 maybeVibrate(accMag)
                 val vibrating = SystemClock.elapsedRealtime() - lastVibMs < VIB_DURATION_MS
+                // P (m/s^2, 2 decimals) is empty on any row where R is not valid.
+                val p = projector.project(latestAcc[0], latestAcc[1], latestAcc[2])
+                val pText = if (p != null) String.format(Locale.US, "%.2f", p) else ""
                 val row = String.format(
                     Locale.US,
                     // t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs
-                    // P (projection onto Azimuth) stays empty until M1.
                     // epochMs = milliseconds since 2020-01-01 00:00:00 UTC.
                     "%.2f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d",
                     elapsedSec,
@@ -119,13 +138,17 @@ class SwimSensorManager(
                     latestAcc[0], latestAcc[1], latestAcc[2],
                     latestGyro[0], latestGyro[1], latestGyro[2],
                     latestMag[0], latestMag[1], latestMag[2],
-                    "",
+                    pText,
                     nowEpochMs - SwimCsv.EPOCH_2020_MS
                 )
                 onSampleRecorded(row)
             }
             Sensor.TYPE_GYROSCOPE -> System.arraycopy(event.values, 0, latestGyro, 0, 3)
-            Sensor.TYPE_MAGNETIC_FIELD -> System.arraycopy(event.values, 0, latestMag, 0, 3)
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                System.arraycopy(event.values, 0, latestMag, 0, 3)
+                projector.onMagnetic(event.values)
+            }
+            Sensor.TYPE_GRAVITY -> projector.onGravity(event.values)
         }
     }
 
