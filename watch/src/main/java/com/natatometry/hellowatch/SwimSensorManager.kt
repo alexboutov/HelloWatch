@@ -24,6 +24,7 @@ class SwimSensorManager(
         private const val TAG = "SwimSensorManager"
         private const val VIB_DURATION_MS = 500L
         private const val METHOD_GRAVITY_MAG = "GRAVITY_MAG"
+        private const val METHOD_ROTATION_VECTOR = "ROTATION_VECTOR"
     }
 
     // ---- Tunable parameters ----
@@ -33,8 +34,9 @@ class SwimSensorManager(
     /** Minimum time (sec) between vibration starts. */
     @Volatile var CoolDown: Double = 1.5
 
-    /** M1: P is computed on the GRAVITY_MAG build (watchW) only. */
+    /** Source of the rotation matrix for P, fixed per build: watchW = GRAVITY_MAG, watchH = ROTATION_VECTOR. */
     private val useGravityMag = BuildConfig.PROJECTION_METHOD == METHOD_GRAVITY_MAG
+    private val useRotationVector = BuildConfig.PROJECTION_METHOD == METHOD_ROTATION_VECTOR
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val linAccSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
@@ -42,6 +44,8 @@ class SwimSensorManager(
     private val magSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
     private val gravitySensor =
         if (useGravityMag) sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY) else null
+    private val rotVecSensor =
+        if (useRotationVector) sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) else null
 
     private val vibrator: Vibrator? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -52,7 +56,7 @@ class SwimSensorManager(
             context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
 
-    private val projector = AzimuthProjector()
+    private val projector = AzimuthProjector(useRotationVector)
 
     private val latestAcc = FloatArray(3)
     private val latestGyro = FloatArray(3)
@@ -69,7 +73,7 @@ class SwimSensorManager(
         tMaxSec = maxSec
         active = true
         lastVibMs = Long.MIN_VALUE / 2
-        projector.reset(if (useGravityMag) azimuthDeg else null)
+        projector.reset(if (useGravityMag || useRotationVector) azimuthDeg else null)
 
         val samplingPeriod = SensorManager.SENSOR_DELAY_GAME
         gyroSensor?.let { sensorManager.registerListener(this, it, samplingPeriod) }
@@ -79,6 +83,13 @@ class SwimSensorManager(
                 sensorManager.registerListener(this, gravitySensor, samplingPeriod)
             } else {
                 Log.w(TAG, "TYPE_GRAVITY not available; P stays empty")
+            }
+        }
+        if (useRotationVector) {
+            if (rotVecSensor != null) {
+                sensorManager.registerListener(this, rotVecSensor, samplingPeriod)
+            } else {
+                Log.w(TAG, "TYPE_ROTATION_VECTOR not available; P stays empty")
             }
         }
         if (linAccSensor != null) {
@@ -149,6 +160,7 @@ class SwimSensorManager(
                 projector.onMagnetic(event.values)
             }
             Sensor.TYPE_GRAVITY -> projector.onGravity(event.values)
+            Sensor.TYPE_ROTATION_VECTOR -> projector.onRotationVector(event.values)
         }
     }
 

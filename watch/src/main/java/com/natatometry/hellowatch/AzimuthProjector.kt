@@ -8,22 +8,28 @@ import kotlin.math.sin
  * Projection of a device-frame acceleration onto the Azimuth (swimming-lane direction).
  *
  * Azimuth: degrees, magnetic, clockwise from north.
- * R (device -> world East/North/Up) comes from GRAVITY + MAGNETIC_FIELD.
+ * R (device -> world East/North/Up) comes from one of two sources, fixed per build:
+ *   useRotationVector = false: GRAVITY + MAGNETIC_FIELD (getRotationMatrix)        - watchW
+ *   useRotationVector = true : ROTATION_VECTOR (getRotationMatrixFromVector)       - watchH
+ * Both give magnetic north, so the azimuth means the same for both.
  *   E = R[0]*ax + R[1]*ay + R[2]*az
  *   N = R[3]*ax + R[4]*ay + R[5]*az
  *   P = E*sin(azimuth) + N*cos(azimuth)
  *
- * project() returns null whenever P cannot be computed (no azimuth, no gravity or
- * magnetic sample yet, or getRotationMatrix failed). It never returns a false 0.
+ * project() returns null whenever P cannot be computed (no azimuth, no sample from the
+ * source yet, or getRotationMatrix failed). It never returns a false 0.
  */
-class AzimuthProjector {
+class AzimuthProjector(private val useRotationVector: Boolean = false) {
 
     private val gravity = FloatArray(3)
     private val magnetic = FloatArray(3)
+    private val rotVec3 = FloatArray(3)
+    private val rotVec4 = FloatArray(4)
     private val rotation = FloatArray(9)
 
     private var hasGravity = false
     private var hasMagnetic = false
+    private var hasRotation = false
     private var hasAzimuth = false
     private var sinAz = 0f
     private var cosAz = 0f
@@ -32,6 +38,7 @@ class AzimuthProjector {
     fun reset(azimuthDeg: Double?) {
         hasGravity = false
         hasMagnetic = false
+        hasRotation = false
         hasAzimuth = azimuthDeg != null
         if (azimuthDeg != null) {
             val rad = Math.toRadians(azimuthDeg)
@@ -52,10 +59,33 @@ class AzimuthProjector {
         hasMagnetic = true
     }
 
+    /**
+     * Latest TYPE_ROTATION_VECTOR values. The sensor reports 3, 4 or 5 values; the 5th
+     * (heading accuracy) is not part of the rotation and is dropped.
+     */
+    fun onRotationVector(values: FloatArray) {
+        if (!useRotationVector) return
+        if (values.size >= 4) {
+            System.arraycopy(values, 0, rotVec4, 0, 4)
+            SensorManager.getRotationMatrixFromVector(rotation, rotVec4)
+        } else if (values.size == 3) {
+            System.arraycopy(values, 0, rotVec3, 0, 3)
+            SensorManager.getRotationMatrixFromVector(rotation, rotVec3)
+        } else {
+            return
+        }
+        hasRotation = true
+    }
+
     /** P in m/s^2 for the device-frame acceleration (ax, ay, az), or null if R is not valid. */
     fun project(ax: Float, ay: Float, az: Float): Float? {
-        if (!hasAzimuth || !hasGravity || !hasMagnetic) return null
-        if (!SensorManager.getRotationMatrix(rotation, null, gravity, magnetic)) return null
+        if (!hasAzimuth) return null
+        if (useRotationVector) {
+            if (!hasRotation) return null
+        } else {
+            if (!hasGravity || !hasMagnetic) return null
+            if (!SensorManager.getRotationMatrix(rotation, null, gravity, magnetic)) return null
+        }
 
         val east = rotation[0] * ax + rotation[1] * ay + rotation[2] * az
         val north = rotation[3] * ax + rotation[4] * ay + rotation[5] * az
