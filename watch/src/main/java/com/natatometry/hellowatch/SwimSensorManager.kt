@@ -80,20 +80,28 @@ class SwimSensorManager(
         clock.start()
         active = true
 
+        // GRAVITY_MAG build: the two inputs of R are asked for their fastest rate, so that
+        // the orientation used for P is as fresh as these sensors allow (dtR column).
+        val fast = SensorManager.SENSOR_DELAY_FASTEST
+        val game = SensorManager.SENSOR_DELAY_GAME
         register(gyroSensor, handler, "TYPE_GYROSCOPE")
-        register(magSensor, handler, "TYPE_MAGNETIC_FIELD")
-        if (useGravityMag) register(gravitySensor, handler, "TYPE_GRAVITY (P stays empty)")
+        register(magSensor, handler, "TYPE_MAGNETIC_FIELD", if (useGravityMag) fast else game)
+        if (useGravityMag) register(gravitySensor, handler, "TYPE_GRAVITY (P stays empty)", fast)
         if (useRotationVector) register(rotVecSensor, handler, "TYPE_ROTATION_VECTOR (P stays empty)")
         register(linAccSensor, handler, "TYPE_LINEAR_ACCELERATION (no samples will be recorded)")
     }
 
-    /** SENSOR_DELAY_GAME, no batching (max report latency 0), delivery on the sensor thread. */
-    private fun register(sensor: Sensor?, handler: Handler, nameIfMissing: String) {
+    /** No batching (max report latency 0), delivery on the sensor thread. Default rate: SENSOR_DELAY_GAME. */
+    private fun register(
+        sensor: Sensor?, handler: Handler, nameIfMissing: String,
+        rate: Int = SensorManager.SENSOR_DELAY_GAME
+    ) {
         if (sensor == null) {
             Log.w(TAG, "Not available: $nameIfMissing")
             return
         }
-        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME, 0, handler)
+        Log.i(TAG, "${sensor.name}: rate=$rate, minDelay=${sensor.minDelay} us")
+        sensorManager.registerListener(this, sensor, rate, 0, handler)
     }
 
     /** May be called from any thread, including the sensor thread. */
