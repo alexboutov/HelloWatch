@@ -62,6 +62,7 @@ class SwimRecordingService : Service() {
     // Latest swim parameters received from the phone (/swim_params).
     private var paramTmaxSec: Double? = null
     private var paramAzimuthDeg: Double? = null
+    private var paramVibrationOn = true
 
     override fun onCreate() {
         super.onCreate()
@@ -79,7 +80,7 @@ class SwimRecordingService : Service() {
 
         syncClient = WearDataSyncClient(
             context = this,
-            onParams = { tMaxSec, azimuthDeg -> storeParams(tMaxSec, azimuthDeg) },
+            onParams = { tMaxSec, azimuthDeg, vibOn -> storeParams(tMaxSec, azimuthDeg, vibOn) },
             // Temporary: phone-side GO SWIM, kept until the watch button start is confirmed.
             onGoSwim = { tMax -> startSession(tMax) }
         )
@@ -103,11 +104,13 @@ class SwimRecordingService : Service() {
         }
     }
 
-    private fun storeParams(tMaxSec: Double, azimuthDeg: Double) {
+    private fun storeParams(tMaxSec: Double, azimuthDeg: Double, vibrationOn: Boolean) {
         paramTmaxSec = tMaxSec
         paramAzimuthDeg = azimuthDeg
-        // A running session keeps the Tmax it started with.
-        _uiState.update { it.copy(paramsText = "Tmax=${formatSeconds(tMaxSec)}s") }
+        paramVibrationOn = vibrationOn
+        // A running session keeps the Tmax and the vibration setting it started with.
+        val vibText = if (vibrationOn) "" else ", vib off"
+        _uiState.update { it.copy(paramsText = "Tmax=${formatSeconds(tMaxSec)}s$vibText") }
     }
 
     private fun startFromButton() {
@@ -127,19 +130,15 @@ class SwimRecordingService : Service() {
         val durationMs = (maxDurationSec * 1000).toLong()
         wakeLock.acquire(durationMs + WAKE_LOCK_MARGIN_MS)
 
-        // The azimuth stored at the start is the one this session is recorded with.
+        // The azimuth and vibration setting stored at the start are the ones this session is recorded with.
         val azimuthDeg = paramAzimuthDeg
-        sessionHeader = SwimCsv.sessionHeader(Date(), azimuthDeg)
+        sensorManager.vibration.enabled = paramVibrationOn
+        sessionHeader = SwimCsv.sessionHeader(Date(), azimuthDeg, paramVibrationOn)
 
         isRecording = true
         MainActivity.isWaterLocked = true
-        _uiState.update {
-            it.copy(
-                statusText = "RECORDING (max ${formatSeconds(maxDurationSec)}s)",
-                isRecording = true,
-                sampleCount = 0
-            )
-        }
+        val status = "RECORDING (max ${formatSeconds(maxDurationSec)}s)"
+        _uiState.update { it.copy(statusText = status, isRecording = true, sampleCount = 0) }
 
         sensorManager.start(maxDurationSec, azimuthDeg)
 

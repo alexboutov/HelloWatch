@@ -7,6 +7,9 @@ import androidx.compose.runtime.setValue
 class PhoneSwimController {
     var tMaxInput by mutableStateOf("3")
     var azimuthInput by mutableStateOf("0")
+
+    /** Vibration feedback on the watch during a swim; sent with the other params. */
+    var vibrationOn by mutableStateOf(true)
     var statusText by mutableStateOf("Ready to record swim")
     var csvPreview by mutableStateOf("")
 
@@ -20,12 +23,14 @@ class PhoneSwimController {
         return azimuthInput.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 && it <= 360.0 }
     }
 
-    fun onParamsSending(tMaxVal: Double, azimuthDeg: Double) {
-        statusText = "Sending params (Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg)..."
+    private fun vibText(vibrationOn: Boolean) = if (vibrationOn) "on" else "off"
+
+    fun onParamsSending(tMaxVal: Double, azimuthDeg: Double, vibrationOn: Boolean = true) {
+        statusText = "Sending params (Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)})..."
     }
 
-    fun onParamsSent(tMaxVal: Double, azimuthDeg: Double) {
-        statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg"
+    fun onParamsSent(tMaxVal: Double, azimuthDeg: Double, vibrationOn: Boolean = true) {
+        statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)}"
     }
 
     // ---- Temporary: phone-side GO SWIM, kept until the watch button start is confirmed ----

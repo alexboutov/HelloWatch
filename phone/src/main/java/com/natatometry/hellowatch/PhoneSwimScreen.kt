@@ -2,17 +2,20 @@ package com.natatometry.hellowatch
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -59,11 +62,13 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             controller.onError("Params Err", "Azimuth must be a number from 0 to 360")
             return
         }
-        controller.onParamsSending(tMaxVal, azimuthDeg)
+        val vibrationOn = controller.vibrationOn
+        controller.onParamsSending(tMaxVal, azimuthDeg, vibrationOn)
         syncClient.sendSwimParams(
             tMaxVal = tMaxVal,
             azimuthDeg = azimuthDeg,
-            onSuccess = { controller.onParamsSent(tMaxVal, azimuthDeg) },
+            vibrationOn = vibrationOn,
+            onSuccess = { controller.onParamsSent(tMaxVal, azimuthDeg, vibrationOn) },
             onFailure = { msg -> controller.onError("Params Err", msg) }
         )
     }
@@ -85,6 +90,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         syncClient.sendSwimParams(
             tMaxVal = tMaxVal,
             azimuthDeg = azimuthDeg,
+            vibrationOn = controller.vibrationOn,
             onSuccess = {
                 syncClient.sendSwimCommand(
                     command = command,
@@ -129,6 +135,17 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(0.6f)
         )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Vibration feedback on the watch; takes effect when the params are sent.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = if (controller.vibrationOn) "Vibration: ON" else "Vibration: OFF")
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = controller.vibrationOn,
+                onCheckedChange = { controller.vibrationOn = it }
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = { sendParams() }) {

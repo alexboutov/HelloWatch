@@ -24,6 +24,7 @@ class PhoneWearSyncClient(
         const val PATH_SWIM_PARAMS = "/swim_params"
         const val KEY_TMAX = "tmax"
         const val KEY_AZIMUTH = "azimuth"
+        const val KEY_VIBRATION = "vibration"
         const val KEY_TIMESTAMP = "timestamp"
     }
 
@@ -75,12 +76,14 @@ class PhoneWearSyncClient(
     fun sendSwimParams(
         tMaxVal: Double,
         azimuthDeg: Double,
+        vibrationOn: Boolean = true,
         onSuccess: () -> Unit,
         onFailure: (String?) -> Unit
     ) {
         val putDataMapReq = PutDataMapRequest.create(PATH_SWIM_PARAMS).apply {
             dataMap.putDouble(KEY_TMAX, tMaxVal)
             dataMap.putDouble(KEY_AZIMUTH, azimuthDeg)
+            dataMap.putBoolean(KEY_VIBRATION, vibrationOn)
             dataMap.putLong(KEY_TIMESTAMP, System.currentTimeMillis())
         }
         val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()

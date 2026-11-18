@@ -13,13 +13,14 @@ import com.google.android.gms.wearable.Wearable
 
 class WearDataSyncClient(
     context: Context,
-    private val onParams: (tMaxSec: Double, azimuthDeg: Double) -> Unit,
+    private val onParams: (tMaxSec: Double, azimuthDeg: Double, vibrationOn: Boolean) -> Unit,
     private val onGoSwim: (Double) -> Unit
 ) {
     companion object {
         private const val PATH_SWIM_PARAMS = "/swim_params"
         private const val KEY_TMAX = "tmax"
         private const val KEY_AZIMUTH = "azimuth"
+        private const val KEY_VIBRATION = "vibration"
         private const val KEY_TIMESTAMP = "timestamp"
     }
 
@@ -47,7 +48,12 @@ class WearDataSyncClient(
 
     private fun deliverParams(dataMap: DataMap) {
         if (!dataMap.containsKey(KEY_TMAX) || !dataMap.containsKey(KEY_AZIMUTH)) return
-        onParams(dataMap.getDouble(KEY_TMAX), dataMap.getDouble(KEY_AZIMUTH))
+        // Params sent by an older phone build have no vibration key: vibration stays on.
+        onParams(
+            dataMap.getDouble(KEY_TMAX),
+            dataMap.getDouble(KEY_AZIMUTH),
+            dataMap.getBoolean(KEY_VIBRATION, true)
+        )
     }
 
     fun register() {

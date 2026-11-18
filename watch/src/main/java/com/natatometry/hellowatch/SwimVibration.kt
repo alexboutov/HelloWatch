@@ -18,6 +18,9 @@ class SwimVibration(context: Context) {
         private const val VIB_DURATION_NS = VIB_DURATION_MS * 1_000_000L
     }
 
+    /** False switches the vibration off: no vibration is started and no row is marked "[v]". */
+    @Volatile var enabled: Boolean = true
+
     // ---- Tunable parameters ----
     /** Linear-acceleration magnitude threshold (m/s^2) that triggers vibration. */
     @Volatile var VibThrsh: Float = 2.0f
@@ -46,9 +49,10 @@ class SwimVibration(context: Context) {
     /**
      * Call once per linear-acceleration sample. Starts a vibration if the rule is met.
      * Returns true if this sample lies in a vibration window (500 ms from the triggering
-     * sample, which is itself included): the row gets the "[v]" mark.
+     * sample, which is itself included): the row gets the "[v]" mark. Always false when disabled.
      */
     fun onSample(accMag: Float, sampleNs: Long): Boolean {
+        if (!enabled) return false
         val coolDownNs = (CoolDown * 1_000_000_000.0).toLong()
         if (accMag > VibThrsh && (!hasVibrated || sampleNs - lastVibNs >= coolDownNs)) {
             hasVibrated = true

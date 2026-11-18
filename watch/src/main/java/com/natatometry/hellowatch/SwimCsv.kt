@@ -21,15 +21,17 @@ object SwimCsv {
     const val EPOCH_2020_MS = 1_577_836_800_000L
 
     /**
-     * Line 1 of the CSV: "<date>  <HH:mm:ss>,<watchId>,<method>,<azimuth>".
+     * Line 1 of the CSV: "<date>  <HH:mm:ss>,<watchId>,<method>,<azimuth>,vib=<on|off>".
      * watchId and method come from the build variant (watchW / watchH).
      * azimuth is in degrees; the field is empty if no azimuth was received.
+     * vib tells whether the vibration feedback was switched on for this session.
      */
-    fun sessionHeader(start: Date, azimuthDeg: Double? = null): String {
+    fun sessionHeader(start: Date, azimuthDeg: Double? = null, vibrationOn: Boolean = true): String {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(start)
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(start)
         val azimuthStr = azimuthDeg?.toString() ?: ""
-        return "$dateStr  $timeStr,${BuildConfig.WATCH_ID},${BuildConfig.PROJECTION_METHOD},$azimuthStr"
+        val vibStr = if (vibrationOn) "vib=on" else "vib=off"
+        return "$dateStr  $timeStr,${BuildConfig.WATCH_ID},${BuildConfig.PROJECTION_METHOD},$azimuthStr,$vibStr"
     }
 
     /** Full CSV text: session header, column header, then one line per row. */
