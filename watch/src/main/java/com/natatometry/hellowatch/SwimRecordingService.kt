@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,7 +21,8 @@ data class SwimUiState(
     val statusText: String = "Idle: hold MAP to start",
     val paramsText: String = "Params: none (send from phone)",
     val isRecording: Boolean = false,
-    val sampleCount: Int = 0
+    val sampleCount: Int = 0,
+    val endsAtElapsedMs: Long = 0L // SystemClock.elapsedRealtime() when the swim reaches Tmax (countdown)
 )
 
 class SwimRecordingService : Service() {
@@ -138,7 +140,8 @@ class SwimRecordingService : Service() {
         isRecording = true
         MainActivity.isWaterLocked = true
         val status = "RECORDING (max ${formatSeconds(maxDurationSec)}s)"
-        _uiState.update { it.copy(statusText = status, isRecording = true, sampleCount = 0) }
+        val endsAt = SystemClock.elapsedRealtime() + durationMs
+        _uiState.update { it.copy(statusText = status, isRecording = true, sampleCount = 0, endsAtElapsedMs = endsAt) }
 
         sensorManager.start(maxDurationSec, azimuthDeg)
 

@@ -1,5 +1,6 @@
 package com.natatometry.hellowatch
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,8 +24,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 @Composable
 fun WatchSwimRecorderScreen() {
@@ -35,6 +40,17 @@ fun WatchSwimRecorderScreen() {
     }
 
     BackHandler(enabled = state.isRecording) {}
+
+    // Whole seconds left to Tmax (rounded up), refreshed five times a second during a swim.
+    val recording = state.isRecording
+    val endsAtMs = state.endsAtElapsedMs
+    val remainingSec by produceState(initialValue = 0L, recording, endsAtMs) {
+        while (recording) {
+            val leftMs = endsAtMs - SystemClock.elapsedRealtime()
+            value = if (leftMs > 0) (leftMs + 999) / 1000 else 0L
+            delay(200)
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -73,13 +89,24 @@ fun WatchSwimRecorderScreen() {
                 )
             }
 
-            // Swim parameters last received from the phone
-            Text(
-                text = state.paramsText,
-                color = Color(0xFF7CFC9A),
-                style = MaterialTheme.typography.caption2,
-                textAlign = TextAlign.Center
-            )
+            if (state.isRecording) {
+                // Countdown to Tmax, MM:SS
+                Text(
+                    text = String.format(Locale.US, "%02d:%02d", remainingSec / 60, remainingSec % 60),
+                    color = Color.White,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                // Swim parameters last received from the phone
+                Text(
+                    text = state.paramsText,
+                    color = Color(0xFF7CFC9A),
+                    style = MaterialTheme.typography.caption2,
+                    textAlign = TextAlign.Center
+                )
+            }
 
             Text(
                 text = if (state.isRecording) "Samples: ${state.sampleCount} (Touch Disabled)" else "Screen Unlocked",

@@ -8,6 +8,11 @@ import java.util.Locale
 
 class SwimFileStorage(private val context: Context) {
 
+    companion object {
+        /** Start of CSV line 1: "<yyyy-MM-dd>  <HH:mm:ss>", the swim's start time on the watch. */
+        private val HEADER_TIME = Regex("""^(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2}):(\d{2})""")
+    }
+
     fun getLogsDirectory(): File {
         val dir = File(context.getExternalFilesDir(null), "swim_logs")
         if (!dir.exists()) {
@@ -16,20 +21,34 @@ class SwimFileStorage(private val context: Context) {
         return dir
     }
 
-    /**
-     * Watch ID from line 1 of the CSV: "<date>  <HH-mm>,<watchId>,<method>,<azimuth>".
-     * Returns "X" if the line has no usable watch ID (CSV from an older watch build).
-     */
+    /** Line 1 of the CSV: "<date>  <HH:mm:ss>,<watchId>,<method>,<azimuth>,vib=<on|off>". */
+    private fun firstLine(csvContent: String): String = csvContent.lineSequence().firstOrNull() ?: ""
+
+    /** Watch ID from line 1; "X" if the line has no usable watch ID (CSV from an older watch build). */
     private fun watchIdOf(csvContent: String): String {
-        val firstLine = csvContent.lineSequence().firstOrNull() ?: return "X"
-        val id = firstLine.split(",").getOrNull(1)?.trim().orEmpty()
+        val id = firstLine(csvContent).split(",").getOrNull(1)?.trim().orEmpty()
         return if (id.isNotEmpty() && id.all { it.isLetterOrDigit() }) id else "X"
     }
 
-    /** Saves the CSV unchanged as swim_<watchId>_<yyyy-MM-dd_HH-mm-ss>.csv. */
+    /**
+     * File-name stamp "yyyy-MM-dd_HH-mm-ss" taken from the swim's start time in line 1.
+     * Null if line 1 does not start with a date and time (CSV from an older watch build).
+     */
+    private fun swimStartStamp(csvContent: String): String? {
+        val m = HEADER_TIME.find(firstLine(csvContent)) ?: return null
+        val (date, hh, mm, ss) = m.destructured
+        return "${date}_$hh-$mm-$ss"
+    }
+
+    /**
+     * Saves the CSV unchanged as swim_<watchId>_<swim start time>.csv.
+     * The time in the name is when the swim started on the watch, not when the phone saved
+     * the file. If line 1 carries no start time, the phone's current time is used instead.
+     */
     fun saveCsv(csvContent: String): Pair<String, String> {
         val dir = getLogsDirectory()
-        val fileStamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+        val fileStamp = swimStartStamp(csvContent)
+            ?: SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
         val outFile = File(dir, "swim_${watchIdOf(csvContent)}_$fileStamp.csv")
         outFile.writeText(csvContent)
 
