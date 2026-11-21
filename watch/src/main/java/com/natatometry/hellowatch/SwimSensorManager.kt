@@ -8,6 +8,7 @@ import android.hardware.SensorManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import java.util.Locale
 import kotlin.math.min
@@ -18,6 +19,7 @@ import kotlin.math.sqrt
  *
  * Events are delivered on a dedicated thread, not the main thread, with batching off.
  * Row times (t, epochMs) come from SensorEvent.timestamp via SensorClock.
+ * tArr is the time the same event reached this class, on the processor's clock.
  * Both callbacks are invoked ON THE SENSOR THREAD; the caller must be thread-safe.
  */
 class SwimSensorManager(
@@ -114,6 +116,8 @@ class SwimSensorManager(
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        // Read first: the moment this event reached the app (arrival clock, column tArr).
+        val arrivalNs = SystemClock.elapsedRealtimeNanos()
         if (!active) return
         val ts = event.timestamp
         clock.observe(ts)
@@ -125,7 +129,8 @@ class SwimSensorManager(
         }
 
         when (event.sensor.type) {
-            Sensor.TYPE_LINEAR_ACCELERATION -> if (elapsedSec >= 0.0) recordSample(event.values, ts, elapsedSec)
+            Sensor.TYPE_LINEAR_ACCELERATION ->
+                if (elapsedSec >= 0.0) recordSample(event.values, ts, elapsedSec, arrivalNs)
             Sensor.TYPE_GYROSCOPE -> System.arraycopy(event.values, 0, latestGyro, 0, 3)
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 System.arraycopy(event.values, 0, latestMag, 0, 3)
@@ -143,8 +148,11 @@ class SwimSensorManager(
         }
     }
 
-    /** One CSV row: t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR */
-    private fun recordSample(acc: FloatArray, ts: Long, elapsedSec: Double) {
+    /**
+     * One CSV row: t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR,tArr
+     * ts = sensor timestamp of the sample (ns); arrivalNs = elapsedRealtimeNanos at its delivery.
+     */
+    private fun recordSample(acc: FloatArray, ts: Long, elapsedSec: Double, arrivalNs: Long) {
         val ax = acc[0]
         val ay = acc[1]
         val az = acc[2]
@@ -162,7 +170,7 @@ class SwimSensorManager(
 
         val row = String.format(
             Locale.US,
-            "%.3f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s",
+            "%.3f,%s,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s,%.4f",
             elapsedSec,
             if (vibrating) "[v]" else "",
             accMag,
@@ -171,7 +179,8 @@ class SwimSensorManager(
             latestMag[0], latestMag[1], latestMag[2],
             pText,
             clock.epochMs2020(ts),
-            dtRText
+            dtRText,
+            clock.arrivalSec(arrivalNs)
         )
         onSampleRecorded(row)
     }

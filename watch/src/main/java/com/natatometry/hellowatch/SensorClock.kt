@@ -4,8 +4,16 @@ import android.os.SystemClock
 import android.util.Log
 
 /**
- * Converts SensorEvent.timestamp (nanoseconds on the sensor clock) into session time
- * and epochMs, so that row times are sample times and not delivery times.
+ * The two clocks of a session.
+ *
+ * Sensor clock: SensorEvent.timestamp (nanoseconds), converted into session time (t) and
+ * epochMs. It is meant to be the time the sample was taken, not the time it was delivered.
+ * On the WSD-F30 it was found wrong for long stretches under water (pool session of
+ * 2026-11-19): fixed 11 ms steps, then forward jumps.
+ *
+ * Arrival clock: SystemClock.elapsedRealtimeNanos() read by the app when an event is
+ * delivered, converted into session time by arrivalSec() (column tArr). It is the
+ * processor's clock and does not depend on the sensor's timestamps.
  *
  * start() reads the wall clock and the elapsed-realtime clock together, once per session.
  * Sensor timestamps are expected to be on the elapsed-realtime clock. The first event is
@@ -62,6 +70,14 @@ class SensorClock {
     /** Sample time in milliseconds since 2020-01-01 00:00:00 UTC. */
     fun epochMs2020(eventTimestampNs: Long): Long {
         return wallStartMs + (eventTimestampNs - sensorStartNs) / 1_000_000L - SwimCsv.EPOCH_2020_MS
+    }
+
+    /**
+     * Seconds from session start to the delivery of an event to the app.
+     * arrivalRealNs = SystemClock.elapsedRealtimeNanos() read when the event was delivered.
+     */
+    fun arrivalSec(arrivalRealNs: Long): Double {
+        return (arrivalRealNs - realStartNs) / 1_000_000_000.0
     }
 
     /** "Now" expressed on the sensor clock, for comparing with event timestamps. */

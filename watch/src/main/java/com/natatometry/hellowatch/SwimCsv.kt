@@ -11,8 +11,10 @@ object SwimCsv {
      * P       projection onto the Azimuth, m/s^2; empty while the rotation matrix is not valid
      * epochMs sample time, see EPOCH_2020_MS
      * dtR     ms between the sample and the orientation input used for P; empty when P is empty
+     * tArr    seconds from session start to the delivery of the sample to the app, from the
+     *         processor's clock (4 decimals); compare with t, the sensor's time of the same sample
      */
-    private const val COLUMNS = "t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR"
+    private const val COLUMNS = "t,VIB,|A|,ax,ay,az,gx,gy,gz,mx,my,mz,P,epochMs,dtR,tArr"
 
     /**
      * 2020-01-01 00:00:00 UTC in milliseconds since 1970. The epochMs column holds
