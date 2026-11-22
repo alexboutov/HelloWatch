@@ -22,6 +22,12 @@ class WearDataSyncClient(
         private const val KEY_AZIMUTH = "azimuth"
         private const val KEY_VIBRATION = "vibration"
         private const val KEY_TIMESTAMP = "timestamp"
+
+        /** Every recording is stored as its own data item under this path. */
+        private const val PATH_CSV = "/swim_csv"
+
+        /** Start of CSV line 1: "<yyyy-MM-dd>  <HH:mm:ss>,<watchId>". */
+        private val HEADER_START = Regex("""^(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2}):(\d{2}),([A-Za-z0-9]+)""")
     }
 
     private val dataClient = Wearable.getDataClient(context)
@@ -94,6 +100,22 @@ class WearDataSyncClient(
         }
     }
 
+    /**
+     * Path of the data item for one recording: /swim_csv/<watchId>_<yyyy-MM-dd>_<HH-mm-ss>,
+     * taken from line 1 of the CSV (the swim's start time). It is different for every recording.
+     */
+    private fun csvItemPath(csvContent: String): String {
+        val line1 = csvContent.lineSequence().firstOrNull() ?: ""
+        val m = HEADER_START.find(line1) ?: return "$PATH_CSV/X_${System.currentTimeMillis()}"
+        val (date, hh, mm, ss, watchId) = m.destructured
+        return "$PATH_CSV/${watchId}_${date}_$hh-$mm-$ss"
+    }
+
+    /**
+     * Stores the recording as its own data item, so a later recording cannot replace it.
+     * The item stays on the watch until the phone has saved the file and deleted the item,
+     * which is the phone's confirmation. onSuccess means "stored for the phone", not "received".
+     */
     fun sendCsvAsset(
         csvContent: String,
         rowCount: Int,
@@ -101,7 +123,7 @@ class WearDataSyncClient(
         onFailure: (String) -> Unit
     ) {
         val asset = Asset.createFromBytes(csvContent.toByteArray(Charsets.UTF_8))
-        val putDataMapReq = PutDataMapRequest.create("/swim_csv").apply {
+        val putDataMapReq = PutDataMapRequest.create(csvItemPath(csvContent)).apply {
             dataMap.putAsset("csv_file", asset)
             dataMap.putInt("row_count", rowCount)
             dataMap.putLong("timestamp", System.currentTimeMillis())

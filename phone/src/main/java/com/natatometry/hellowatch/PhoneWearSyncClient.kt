@@ -1,23 +1,18 @@
 package com.natatometry.hellowatch
 
 import android.content.Context
-import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
-import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class PhoneWearSyncClient(
     context: Context,
-    private val scope: CoroutineScope,
-    private val storage: SwimFileStorage,
-    private val onCsvSaved: (fileName: String, rowCount: Int, preview: String) -> Unit,
-    private val onError: (prefix: String, message: String?) -> Unit
+    scope: CoroutineScope,
+    storage: SwimFileStorage,
+    onCsvSaved: (fileName: String, rowCount: Int, preview: String) -> Unit,
+    onError: (prefix: String, message: String?) -> Unit
 ) {
     companion object {
         /** Persistent swim parameters, synced to every connected watch. */
@@ -30,42 +25,23 @@ class PhoneWearSyncClient(
 
     private val dataClient = Wearable.getDataClient(context)
 
+    /** Saves the CSVs waiting on the watches and confirms each one by deleting its data item. */
+    private val csvReceiver = PhoneCsvReceiver(dataClient, scope, storage, onCsvSaved, onError)
+
     private val listener = DataClient.OnDataChangedListener { dataEvents ->
         for (event in dataEvents) {
-            if (event.type == DataEvent.TYPE_CHANGED &&
-                event.dataItem.uri.path == "/swim_csv"
-            ) {
-                val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
-                val asset = dataMap.getAsset("csv_file")
-                val rowCount = dataMap.getInt("row_count", 0)
-
-                if (asset != null) {
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            val fdResponse = Tasks.await(dataClient.getFdForAsset(asset))
-                            val csvContent = fdResponse.inputStream.bufferedReader().use { it.readText() }
-                            val (fileName, previewLines) = storage.saveCsv(csvContent)
-
-                            withContext(Dispatchers.Main) {
-                                onCsvSaved(fileName, rowCount, previewLines)
-                            }
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                onError("CSV Read Err", e.message)
-                            }
-                        }
-                    }
-                }
-            }
+            if (event.type == DataEvent.TYPE_CHANGED) csvReceiver.onItemChanged(event.dataItem)
         }
     }
 
     fun register() {
         dataClient.addListener(listener)
+        csvReceiver.start()
     }
 
     fun unregister() {
         dataClient.removeListener(listener)
+        csvReceiver.stop()
     }
 
     /**
