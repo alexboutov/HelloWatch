@@ -32,14 +32,14 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val controller = remember { PhoneSwimController() }
+    val controller = remember(context) { PhoneSwimController(PhoneParamsStore(context)) }
     val storage = remember(context) { SwimFileStorage(context) }
     val syncClient = remember(context, scope) {
         PhoneWearSyncClient(
             context = context,
             scope = scope,
             storage = storage,
-            onCsvSaved = { fileName, count, preview -> controller.onCsvSaved(fileName, count, preview) },
+            onCsvSaved = { fileName, count, _ -> controller.onCsvSaved(fileName, count) },
             onError = { prefix, msg -> controller.onError(prefix, msg) }
         )
     }
@@ -63,6 +63,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             return
         }
         val vibrationOn = controller.vibrationOn
+        controller.saveParams()
         controller.onParamsSending(tMaxVal, azimuthDeg, vibrationOn)
         syncClient.sendSwimParams(
             tMaxVal = tMaxVal,
@@ -86,6 +87,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             controller.onError("Command Err", "Azimuth must be a number from 0 to 360")
             return
         }
+        controller.saveParams()
         controller.onCommandSending(command, tMaxVal)
         syncClient.sendSwimParams(
             tMaxVal = tMaxVal,
@@ -117,24 +119,26 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = controller.tMaxInput,
-            onValueChange = { controller.tMaxInput = it },
-            label = { Text("Tmax (seconds)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            modifier = Modifier.fillMaxWidth(0.6f)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = controller.azimuthInput,
-            onValueChange = { controller.azimuthInput = it },
-            label = { Text("Azimuth (deg, magnetic)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            modifier = Modifier.fillMaxWidth(0.6f)
-        )
+        // Tmax and Azimuth share one row to leave room for the list of received files.
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = controller.tMaxInput,
+                onValueChange = { controller.tMaxInput = it },
+                label = { Text("Tmax, s") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            OutlinedTextField(
+                value = controller.azimuthInput,
+                onValueChange = { controller.azimuthInput = it },
+                label = { Text("Az, deg") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f)
+            )
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         // Vibration feedback on the watch; takes effect when the params are sent.
@@ -164,12 +168,18 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyLarge
         )
 
-        if (controller.csvPreview.isNotEmpty()) {
+        // Files received since the app was opened, newest swim first.
+        if (controller.receivedFiles.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Preview (first 6 lines):\n${controller.csvPreview}",
-                style = MaterialTheme.typography.bodySmall
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Received (${controller.receivedFiles.size}):",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                controller.receivedFiles.forEach { name ->
+                    Text(text = name, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }

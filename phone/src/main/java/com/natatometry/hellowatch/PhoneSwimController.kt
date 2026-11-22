@@ -4,14 +4,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-class PhoneSwimController {
-    var tMaxInput by mutableStateOf("3")
-    var azimuthInput by mutableStateOf("0")
+/** State of the phone screen. The fields start from the params last sent, kept in [store]. */
+class PhoneSwimController(private val store: PhoneParamsStore) {
+    var tMaxInput by mutableStateOf(store.tMaxInput("3"))
+    var azimuthInput by mutableStateOf(store.azimuthInput("0"))
 
     /** Vibration feedback on the watch during a swim; sent with the other params. */
-    var vibrationOn by mutableStateOf(true)
+    var vibrationOn by mutableStateOf(store.vibrationOn(true))
     var statusText by mutableStateOf("Ready to record swim")
-    var csvPreview by mutableStateOf("")
+
+    /** Names of the files received since the app was opened, newest swim first. */
+    var receivedFiles by mutableStateOf(emptyList<String>())
+        private set
+
+    /** Keeps the current field values on the phone; called when they are sent to the watches. */
+    fun saveParams() {
+        store.save(tMaxInput.trim(), azimuthInput.trim(), vibrationOn)
+    }
 
     /** Tmax in seconds; null if the input is not a finite number > 0. */
     fun parseTMax(): Double? {
@@ -43,9 +52,14 @@ class PhoneSwimController {
         statusText = "Watch recording (max ${tMaxVal}s)..."
     }
 
-    fun onCsvSaved(fileName: String, rowCount: Int, previewLines: String) {
+    /** Date-time part of "swim_<watchId>_<yyyy-MM-dd>_<HH-mm-ss>.csv"; it sorts as text. */
+    private fun stampOf(fileName: String): String =
+        fileName.removeSuffix(".csv").substringAfter("swim_").substringAfter("_")
+
+    fun onCsvSaved(fileName: String, rowCount: Int) {
         statusText = "Saved $fileName ($rowCount rows)"
-        csvPreview = previewLines
+        receivedFiles = (receivedFiles + fileName).distinct()
+            .sortedWith(compareByDescending<String> { stampOf(it) }.thenBy { it })
     }
 
     fun onError(prefix: String, message: String?) {
