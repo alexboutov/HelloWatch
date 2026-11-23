@@ -8,9 +8,10 @@ import kotlin.math.sin
  * Projection of a device-frame acceleration onto the Azimuth (swimming-lane direction).
  *
  * Azimuth: degrees, magnetic, clockwise from north.
- * R (device -> world East/North/Up) comes from one of two sources, fixed per build:
- *   useRotationVector = false: GRAVITY + MAGNETIC_FIELD (getRotationMatrix)        - watchW
- *   useRotationVector = true : ROTATION_VECTOR (getRotationMatrixFromVector)       - watchH
+ * R (device -> world East/North/Up) comes from one of two sources, fixed per instance:
+ *   useRotationVector = false: GRAVITY + MAGNETIC_FIELD (getRotationMatrix)        - column Pgm
+ *   useRotationVector = true : ROTATION_VECTOR (getRotationMatrixFromVector)       - column Prv
+ * Since M4 every watch runs one instance of each.
  * Both give magnetic north, so the azimuth means the same for both.
  *   E = R[0]*ax + R[1]*ay + R[2]*az
  *   N = R[3]*ax + R[4]*ay + R[5]*az

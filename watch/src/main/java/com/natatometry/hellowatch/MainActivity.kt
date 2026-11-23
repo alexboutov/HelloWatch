@@ -19,6 +19,9 @@ class MainActivity : ComponentActivity() {
         private const val START_KEYCODE = KeyEvent.KEYCODE_STEM_1
 
         var isWaterLocked = false
+
+        /** True while this screen is in front (between onResume and onPause). Read by WatchStateLog. */
+        @Volatile var isInFront = false
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
@@ -48,6 +51,16 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_STEM_2 -> return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isInFront = true
+    }
+
+    override fun onPause() {
+        isInFront = false
+        super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

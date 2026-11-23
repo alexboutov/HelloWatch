@@ -28,18 +28,15 @@ android {
     }
 
     // One APK per test watch. Same applicationId for both, as the Data Layer requires.
-    // watchW projects with GRAVITY+MAG, watchH with ROTATION_VECTOR (from M1/M2 on).
     flavorDimensions += "watch"
     productFlavors {
         create("watchW") {
             dimension = "watch"
             buildConfigField("String", "WATCH_ID", "\"W\"")
-            buildConfigField("String", "PROJECTION_METHOD", "\"GRAVITY_MAG\"")
         }
         create("watchH") {
             dimension = "watch"
             buildConfigField("String", "WATCH_ID", "\"H\"")
-            buildConfigField("String", "PROJECTION_METHOD", "\"ROTATION_VECTOR\"")
         }
     }
 

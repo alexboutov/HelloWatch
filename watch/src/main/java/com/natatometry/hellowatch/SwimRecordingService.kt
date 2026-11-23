@@ -17,14 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Date
 
-data class SwimUiState(
-    val statusText: String = "Idle: hold MAP to start",
-    val paramsText: String = "Params: none (send from phone)",
-    val isRecording: Boolean = false,
-    val sampleCount: Int = 0,
-    val endsAtElapsedMs: Long = 0L // SystemClock.elapsedRealtime() when the swim reaches Tmax (countdown)
-)
-
+/** Records one swim per start, from the MAP button to Tmax, and sends its CSV to the phone. */
 class SwimRecordingService : Service() {
 
     companion object {
@@ -152,7 +145,10 @@ class SwimRecordingService : Service() {
         }
     }
 
-    /** Main thread. Reached only at Tmax (timeout job or sensor clock). Nothing else ends a session. */
+    /**
+     * Main thread. Reached only at Tmax, from the timeout job or from the same check on the
+     * sensor thread; both use the processor's clock. Nothing else ends a session.
+     */
     private fun finishSession() {
         if (!isRecording) return
         isRecording = false
@@ -162,15 +158,18 @@ class SwimRecordingService : Service() {
 
         val rows = synchronized(csvRows) { csvRows.toList() }
         val totalSamples = rows.size
+        // Health check of this session, taken now: a later session resets it.
+        val healthFields = sensorManager.health.headerFields(totalSamples)
+        val healthText = sensorManager.health.screenText(totalSamples)
         _uiState.update {
             it.copy(statusText = "Sending $totalSamples rows...", isRecording = false, sampleCount = totalSamples)
         }
 
         syncClient.sendCsvAsset(
-            csvContent = SwimCsv.build(sessionHeader, rows),
+            csvContent = SwimCsv.build(sessionHeader, rows, healthFields),
             rowCount = totalSamples,
             onSuccess = {
-                _uiState.update { it.copy(statusText = "Sent $totalSamples rows! (Unlocked)") }
+                _uiState.update { it.copy(statusText = "Sent $healthText") }
                 releaseWakeLock()
             },
             onFailure = { err ->
