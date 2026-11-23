@@ -32,7 +32,11 @@ class SwimSensorManager(
     companion object {
         private const val TAG = "SwimSensorManager"
 
-        /** Sampling period asked of every sensor: 10,000 us = 100 Hz. A slower sensor gives its own fastest rate. */
+        /**
+         * Sampling period wanted from every sensor: 10,000 us = 100 Hz. A sensor that cannot go
+         * that fast is asked for its own shortest period instead (the magnetometer: 20,000 us):
+         * asked for less than it can deliver, it stamps its readings wrongly.
+         */
         private const val SAMPLING_PERIOD_US = 10_000
     }
 
@@ -88,14 +92,15 @@ class SwimSensorManager(
         register(linAccSensor, handler, "TYPE_LINEAR_ACCELERATION (no samples will be recorded)")
     }
 
-    /** 100 Hz asked for explicitly, no batching (max report latency 0), delivery on the sensor thread. */
+    /** 100 Hz (or the sensor's own fastest rate) asked for explicitly, no batching, delivery on the sensor thread. */
     private fun register(sensor: Sensor?, handler: Handler, nameIfMissing: String) {
         if (sensor == null) {
             Log.w(TAG, "Not available: $nameIfMissing")
             return
         }
-        val accepted = sensorManager.registerListener(this, sensor, SAMPLING_PERIOD_US, 0, handler)
-        Log.i(TAG, "${sensor.name}: asked $SAMPLING_PERIOD_US us, minDelay=${sensor.minDelay} us, accepted=$accepted")
+        val periodUs = maxOf(SAMPLING_PERIOD_US, sensor.minDelay)
+        val accepted = sensorManager.registerListener(this, sensor, periodUs, 0, handler)
+        Log.i(TAG, "${sensor.name}: asked $periodUs us, minDelay=${sensor.minDelay} us, accepted=$accepted")
     }
 
     /** May be called from any thread, including the sensor thread. */
@@ -132,7 +137,8 @@ class SwimSensorManager(
                 row.onGravity(values, ts)
                 gmProjector.onGravity(values)
             }
-            Sensor.TYPE_ROTATION_VECTOR -> {
+            // A reading of all zeros is not a rotation (seen once, as the first reading of a session).
+            Sensor.TYPE_ROTATION_VECTOR -> if (values.any { it != 0f }) {
                 row.onRotationVector(values, ts)
                 rvProjector.onRotationVector(values)
             }
