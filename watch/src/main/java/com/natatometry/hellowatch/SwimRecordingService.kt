@@ -48,6 +48,7 @@ class SwimRecordingService : Service() {
     private lateinit var sensorManager: SwimSensorManager
     private lateinit var syncClient: WearDataSyncClient
     private lateinit var wakeLock: SwimWakeLock
+    private lateinit var guard: SwimGuard
 
     /** Written on the sensor thread, read on the main thread: always used under synchronized(csvRows). */
     private val csvRows = mutableListOf<String>()
@@ -65,6 +66,7 @@ class SwimRecordingService : Service() {
         startForeground(SwimNotification.NOTIFICATION_ID, SwimNotification.build(this))
 
         wakeLock = SwimWakeLock(this)
+        guard = SwimGuard(this)
 
         // Both callbacks arrive on the sensor thread.
         sensorManager = SwimSensorManager(
@@ -105,7 +107,8 @@ class SwimRecordingService : Service() {
         paramVibrationOn = vibrationOn
         // A running session keeps the Tmax and the vibration setting it started with.
         val vibText = if (vibrationOn) "" else ", vib off"
-        _uiState.update { it.copy(paramsText = "Tmax=${formatSeconds(tMaxSec)}s$vibText") }
+        val lockText = if (guard.canLockFully) "" else ", NO FULL LOCK"
+        _uiState.update { it.copy(paramsText = "Tmax=${formatSeconds(tMaxSec)}s$vibText$lockText") }
     }
 
     private fun startFromButton() {
@@ -131,7 +134,7 @@ class SwimRecordingService : Service() {
         sessionHeader = SwimCsv.sessionHeader(Date(), azimuthDeg, paramVibrationOn)
 
         isRecording = true
-        MainActivity.isWaterLocked = true
+        guard.start(durationMs)
         val status = "RECORDING (max ${formatSeconds(maxDurationSec)}s)"
         val endsAt = SystemClock.elapsedRealtime() + durationMs
         _uiState.update { it.copy(statusText = status, isRecording = true, sampleCount = 0, endsAtElapsedMs = endsAt) }
@@ -152,40 +155,35 @@ class SwimRecordingService : Service() {
     private fun finishSession() {
         if (!isRecording) return
         isRecording = false
-        MainActivity.isWaterLocked = false
+        guard.stop()
         timeoutJob?.cancel()
         sensorManager.stop()
 
         val rows = synchronized(csvRows) { csvRows.toList() }
         val totalSamples = rows.size
         // Health check of this session, taken now: a later session resets it.
-        val healthFields = sensorManager.health.headerFields(totalSamples)
-        val healthText = sensorManager.health.screenText(totalSamples)
+        val healthFields = sensorManager.health.headerFields(totalSamples) + "," + guard.headerFields()
+        val healthText = sensorManager.health.screenText(totalSamples) + "\n" + guard.screenText()
         _uiState.update {
             it.copy(statusText = "Sending $totalSamples rows...", isRecording = false, sampleCount = totalSamples)
         }
 
+        val done = { text: String ->
+            _uiState.update { it.copy(statusText = text) }
+            // A new session may already have started and re-acquired the lock.
+            if (!isRecording) wakeLock.release()
+        }
         syncClient.sendCsvAsset(
             csvContent = SwimCsv.build(sessionHeader, rows, healthFields),
             rowCount = totalSamples,
-            onSuccess = {
-                _uiState.update { it.copy(statusText = "Sent $healthText") }
-                releaseWakeLock()
-            },
-            onFailure = { err ->
-                _uiState.update { it.copy(statusText = "Send Err: $err") }
-                releaseWakeLock()
-            }
+            onSuccess = { done("Sent $healthText") },
+            onFailure = { err -> done("Send Err: $err") }
         )
-    }
-
-    private fun releaseWakeLock() {
-        // A new session may already have started and re-acquired the lock.
-        if (!isRecording) wakeLock.release()
     }
 
     override fun onDestroy() {
         timeoutJob?.cancel()
+        guard.stop()
         sensorManager.stop()
         syncClient.unregister()
         serviceScope.cancel()
