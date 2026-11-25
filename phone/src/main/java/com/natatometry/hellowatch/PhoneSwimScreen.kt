@@ -27,19 +27,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
+/** [refreshKey]: the list of the files on the phone is read again whenever this value changes. */
 @Composable
-fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
+fun PhoneSwimControlScreen(modifier: Modifier = Modifier, refreshKey: Int = 0) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val controller = remember(context) { PhoneSwimController(PhoneParamsStore(context)) }
     val storage = remember(context) { SwimFileStorage(context) }
+    val fileList = remember(context) { PhoneFileListState() }
     val syncClient = remember(context, scope) {
         PhoneWearSyncClient(
             context = context,
             scope = scope,
             storage = storage,
-            onCsvSaved = { fileName, count, _ -> controller.onCsvSaved(fileName, count) },
+            onCsvSaved = { fileName, count, _ ->
+                controller.onCsvSaved(fileName, count)
+                fileList.onSaved(fileName)
+            },
             onError = { prefix, msg -> controller.onError(prefix, msg) }
         )
     }
@@ -119,7 +124,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tmax and Azimuth share one row to leave room for the list of received files.
+        // Tmax and Azimuth share one row to leave room for the list of files.
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = controller.tMaxInput,
@@ -168,18 +173,13 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyLarge
         )
 
-        // Files received since the app was opened, newest swim first.
-        if (controller.receivedFiles.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Received (${controller.receivedFiles.size}):",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                controller.receivedFiles.forEach { name ->
-                    Text(text = name, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
+        // All swim*.csv files on the phone, newest swim first: select and delete (PhoneFileList.kt).
+        Spacer(modifier = Modifier.height(12.dp))
+        PhoneFilesSection(
+            fileList = fileList,
+            storage = storage,
+            refreshKey = refreshKey,
+            onStatus = { controller.statusText = it }
+        )
     }
 }

@@ -13,10 +13,6 @@ class PhoneSwimController(private val store: PhoneParamsStore) {
     var vibrationOn by mutableStateOf(store.vibrationOn(true))
     var statusText by mutableStateOf("Ready to record swim")
 
-    /** Names of the files received since the app was opened, newest swim first. */
-    var receivedFiles by mutableStateOf(emptyList<String>())
-        private set
-
     /** Keeps the current field values on the phone; called when they are sent to the watches. */
     fun saveParams() {
         store.save(tMaxInput.trim(), azimuthInput.trim(), vibrationOn)
@@ -52,14 +48,9 @@ class PhoneSwimController(private val store: PhoneParamsStore) {
         statusText = "Watch recording (max ${tMaxVal}s)..."
     }
 
-    /** Date-time part of "swim_<watchId>_<yyyy-MM-dd>_<HH-mm-ss>.csv"; it sorts as text. */
-    private fun stampOf(fileName: String): String =
-        fileName.removeSuffix(".csv").substringAfter("swim_").substringAfter("_")
-
+    /** The list of the files on the phone is kept by PhoneFileListState, not here. */
     fun onCsvSaved(fileName: String, rowCount: Int) {
         statusText = "Saved $fileName ($rowCount rows)"
-        receivedFiles = (receivedFiles + fileName).distinct()
-            .sortedWith(compareByDescending<String> { stampOf(it) }.thenBy { it })
     }
 
     fun onError(prefix: String, message: String?) {

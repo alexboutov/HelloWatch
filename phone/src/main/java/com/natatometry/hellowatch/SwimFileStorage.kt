@@ -55,4 +55,25 @@ class SwimFileStorage(private val context: Context) {
         val previewLines = csvContent.lines().take(6).joinToString("\n")
         return Pair(outFile.name, previewLines)
     }
+
+    /** True for the name of a recording in the logs folder: swim*.csv. */
+    private fun isSwimCsv(name: String): Boolean = name.startsWith("swim") && name.endsWith(".csv")
+
+    /** Names of the swim*.csv files in the logs folder, in no particular order. */
+    fun listCsvNames(): List<String> =
+        getLogsDirectory().listFiles()?.filter { it.isFile && isSwimCsv(it.name) }?.map { it.name }
+            ?: emptyList()
+
+    /**
+     * Deletes the named swim*.csv files from the logs folder. This cannot be undone.
+     * Returns the names that could not be deleted. A file that is already gone counts as
+     * deleted; a name that is not a swim*.csv file of this folder is left alone and returned.
+     */
+    fun deleteCsv(names: Collection<String>): List<String> {
+        val dir = getLogsDirectory()
+        return names.filterNot { name ->
+            val file = File(dir, name)
+            isSwimCsv(name) && file.parentFile == dir && (!file.exists() || (file.isFile && file.delete()))
+        }
+    }
 }
