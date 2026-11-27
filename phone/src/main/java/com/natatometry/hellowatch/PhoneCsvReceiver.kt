@@ -27,6 +27,8 @@ import kotlinx.coroutines.withContext
  * Nothing depends on being notified at the right moment: while started, every waiting item is
  * looked up again every retryMs, so a file that arrived while the app was closed, or whose
  * transfer failed, is fetched on a later round.
+ *
+ * Transfer test, stage 1: every saved file gets one line in transfer_log.csv (see TransferLog).
  */
 class PhoneCsvReceiver(
     private val dataClient: DataClient,
@@ -42,7 +44,10 @@ class PhoneCsvReceiver(
         private const val SHORT_TIMEOUT_S = 30L
     }
 
-    private class Waiting(val uri: Uri, val asset: Asset, val rowCount: Int)
+    /** handoverMs: the watch's clock when it handed the recording to the Data Layer; 0 if not sent. */
+    private class Waiting(val uri: Uri, val asset: Asset, val rowCount: Int, val handoverMs: Long)
+
+    private val transferLog = TransferLog(storage.getLogsDirectory())
 
     private val lock = Any()
     private val inProgress = HashSet<Uri>() // items being fetched or deleted right now
@@ -79,7 +84,7 @@ class PhoneCsvReceiver(
         if (!isCsvPath(item.uri.path)) return null
         val dataMap = DataMapItem.fromDataItem(item).dataMap
         val asset = dataMap.getAsset("csv_file") ?: return null
-        return Waiting(item.uri, asset, dataMap.getInt("row_count", 0))
+        return Waiting(item.uri, asset, dataMap.getInt("row_count", 0), dataMap.getLong("timestamp", 0L))
     }
 
     /** One round: every CSV item of every watch that is still in the Data Layer. IO thread. */
@@ -106,10 +111,14 @@ class PhoneCsvReceiver(
         scope.launch(Dispatchers.IO) {
             try {
                 if (synchronized(lock) { w.uri !in saved }) {
+                    val fetchStartMs = System.currentTimeMillis()
                     val response =
                         Tasks.await(dataClient.getFdForAsset(w.asset), FETCH_TIMEOUT_S, TimeUnit.SECONDS)
                     val csvContent = response.inputStream.bufferedReader().use { it.readText() }
                     val (fileName, previewLines) = storage.saveCsv(csvContent)
+                    transferLog.add(
+                        fileName, TransferLog.METHOD_DATA_LAYER, w.handoverMs, fetchStartMs, System.currentTimeMillis()
+                    )
                     synchronized(lock) { saved.add(w.uri) }
                     withContext(Dispatchers.Main) { onCsvSaved(fileName, w.rowCount, previewLines) }
                 }
