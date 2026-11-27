@@ -23,6 +23,9 @@ class WearDataSyncClient(
         private const val KEY_VIBRATION = "vibration"
         private const val KEY_TIMESTAMP = "timestamp"
 
+        /** Transfer test: true = send the CSV through the socket (CsvTransfer), false = Data Layer. */
+        private const val KEY_SOCKET = "socket"
+
         /** Every recording is stored as its own data item under this path. */
         private const val PATH_CSV = "/swim_csv"
 
@@ -32,8 +35,23 @@ class WearDataSyncClient(
 
     private val dataClient = Wearable.getDataClient(context)
 
+    /**
+     * Transfer method last received from the phone with the params. False (Data Layer) until
+     * the phone sends it, and for params from an older phone build, which have no such key.
+     */
+    @Volatile var useSocket: Boolean = false
+        private set
+
+    /**
+     * Called (main thread) with the path of a recording's data item when that item is deleted.
+     * The phone deletes it after saving the file: this is its confirmation (see CsvTransfer).
+     */
+    var onCsvDeleted: ((String) -> Unit)? = null
+
     private val listener = DataClient.OnDataChangedListener { dataEvents ->
         for (event in dataEvents) {
+            val path = event.dataItem.uri.path ?: continue
+            if (event.type == DataEvent.TYPE_DELETED && path.startsWith("$PATH_CSV/")) onCsvDeleted?.invoke(path)
             if (event.type != DataEvent.TYPE_CHANGED) continue
             when (event.dataItem.uri.path) {
                 PATH_SWIM_PARAMS -> {
@@ -54,6 +72,7 @@ class WearDataSyncClient(
 
     private fun deliverParams(dataMap: DataMap) {
         if (!dataMap.containsKey(KEY_TMAX) || !dataMap.containsKey(KEY_AZIMUTH)) return
+        useSocket = dataMap.getBoolean(KEY_SOCKET, false)
         // Params sent by an older phone build have no vibration key: vibration stays on.
         onParams(
             dataMap.getDouble(KEY_TMAX),
@@ -104,7 +123,7 @@ class WearDataSyncClient(
      * Path of the data item for one recording: /swim_csv/<watchId>_<yyyy-MM-dd>_<HH-mm-ss>,
      * taken from line 1 of the CSV (the swim's start time). It is different for every recording.
      */
-    private fun csvItemPath(csvContent: String): String {
+    fun csvItemPath(csvContent: String): String {
         val line1 = csvContent.lineSequence().firstOrNull() ?: ""
         val m = HEADER_START.find(line1) ?: return "$PATH_CSV/X_${System.currentTimeMillis()}"
         val (date, hh, mm, ss, watchId) = m.destructured

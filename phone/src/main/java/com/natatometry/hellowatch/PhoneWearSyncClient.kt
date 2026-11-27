@@ -21,12 +21,18 @@ class PhoneWearSyncClient(
         const val KEY_AZIMUTH = "azimuth"
         const val KEY_VIBRATION = "vibration"
         const val KEY_TIMESTAMP = "timestamp"
+
+        /** Transfer test: true = the watches send the CSV through the socket, false = Data Layer. */
+        const val KEY_SOCKET = "socket"
     }
 
     private val dataClient = Wearable.getDataClient(context)
 
     /** Saves the CSVs waiting on the watches and confirms each one by deleting its data item. */
     private val csvReceiver = PhoneCsvReceiver(dataClient, scope, storage, onCsvSaved, onError)
+
+    /** Transfer test: receives the CSVs the watches send through the socket. Listens while registered. */
+    private val socketReceiver = PhoneSocketReceiver(storage, onCsvSaved, onError)
 
     private val listener = DataClient.OnDataChangedListener { dataEvents ->
         for (event in dataEvents) {
@@ -37,11 +43,13 @@ class PhoneWearSyncClient(
     fun register() {
         dataClient.addListener(listener)
         csvReceiver.start()
+        socketReceiver.start()
     }
 
     fun unregister() {
         dataClient.removeListener(listener)
         csvReceiver.stop()
+        socketReceiver.stop()
     }
 
     /**
@@ -53,6 +61,7 @@ class PhoneWearSyncClient(
         tMaxVal: Double,
         azimuthDeg: Double,
         vibrationOn: Boolean = true,
+        useSocket: Boolean = false,
         onSuccess: () -> Unit,
         onFailure: (String?) -> Unit
     ) {
@@ -60,6 +69,7 @@ class PhoneWearSyncClient(
             dataMap.putDouble(KEY_TMAX, tMaxVal)
             dataMap.putDouble(KEY_AZIMUTH, azimuthDeg)
             dataMap.putBoolean(KEY_VIBRATION, vibrationOn)
+            dataMap.putBoolean(KEY_SOCKET, useSocket)
             dataMap.putLong(KEY_TIMESTAMP, System.currentTimeMillis())
         }
         val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()

@@ -47,6 +47,7 @@ class SwimRecordingService : Service() {
 
     private lateinit var sensorManager: SwimSensorManager
     private lateinit var syncClient: WearDataSyncClient
+    private lateinit var transfer: CsvTransfer // Data Layer or socket (transfer test)
     private lateinit var wakeLock: SwimWakeLock
     private lateinit var guard: SwimGuard
 
@@ -59,6 +60,7 @@ class SwimRecordingService : Service() {
     private var paramTmaxSec: Double? = null
     private var paramAzimuthDeg: Double? = null
     private var paramVibrationOn = true
+    private var sessionUseSocket = false // transfer method taken at the start of the session
 
     override fun onCreate() {
         super.onCreate()
@@ -82,6 +84,7 @@ class SwimRecordingService : Service() {
             onGoSwim = { tMax -> startSession(tMax) }
         )
         syncClient.register()
+        transfer = CsvTransfer(this, syncClient) { isRecording }.also { it.resendPending() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -124,15 +127,13 @@ class SwimRecordingService : Service() {
     private fun startSession(maxDurationSec: Double) {
         if (isRecording) return
         synchronized(csvRows) { csvRows.clear() }
-
         val durationMs = (maxDurationSec * 1000).toLong()
         wakeLock.acquire(durationMs + WAKE_LOCK_MARGIN_MS)
-
         // The azimuth and vibration setting stored at the start are the ones this session is recorded with.
         val azimuthDeg = paramAzimuthDeg
         sensorManager.vibration.enabled = paramVibrationOn
+        sessionUseSocket = syncClient.useSocket
         sessionHeader = SwimCsv.sessionHeader(Date(), azimuthDeg, paramVibrationOn)
-
         isRecording = true
         guard.start(durationMs)
         val status = "RECORDING (max ${formatSeconds(maxDurationSec)}s)"
@@ -165,20 +166,19 @@ class SwimRecordingService : Service() {
         val healthFields = sensorManager.health.headerFields(totalSamples) + "," + guard.headerFields()
         val healthText = sensorManager.health.screenText(totalSamples) + "\n" + guard.screenText()
         _uiState.update {
-            it.copy(statusText = "Sending $totalSamples rows...", isRecording = false, sampleCount = totalSamples)
+            val via = if (sessionUseSocket) " (socket)" else ""
+            it.copy(statusText = "Sending $totalSamples rows$via...", isRecording = false, sampleCount = totalSamples)
         }
 
+        // Texts may come minutes later (confirmation): a new session's screen and wake lock are left alone.
         val done = { text: String ->
-            _uiState.update { it.copy(statusText = text) }
-            // A new session may already have started and re-acquired the lock.
-            if (!isRecording) wakeLock.release()
+            if (!isRecording) {
+                _uiState.update { it.copy(statusText = text) }
+                wakeLock.release()
+            }
         }
-        syncClient.sendCsvAsset(
-            csvContent = SwimCsv.build(sessionHeader, rows, healthFields),
-            rowCount = totalSamples,
-            onSuccess = { done("Sent $healthText") },
-            onFailure = { err -> done("Send Err: $err") }
-        )
+        val csvContent = SwimCsv.build(sessionHeader, rows, healthFields)
+        transfer.send(csvContent, totalSamples, sessionUseSocket, healthText, done)
     }
 
     override fun onDestroy() {
@@ -186,6 +186,7 @@ class SwimRecordingService : Service() {
         guard.stop()
         sensorManager.stop()
         syncClient.unregister()
+        transfer.close()
         serviceScope.cancel()
         wakeLock.release()
         super.onDestroy()

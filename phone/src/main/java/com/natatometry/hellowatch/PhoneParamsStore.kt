@@ -13,6 +13,7 @@ class PhoneParamsStore(context: Context) {
         private const val KEY_TMAX = "tmax_input"
         private const val KEY_AZIMUTH = "azimuth_input"
         private const val KEY_VIBRATION = "vibration_on"
+        private const val KEY_SOCKET = "transfer_socket"
     }
 
     private val prefs = context.applicationContext
@@ -27,12 +28,16 @@ class PhoneParamsStore(context: Context) {
     /** Stored Vibration switch; [default] if nothing was stored yet. */
     fun vibrationOn(default: Boolean): Boolean = prefs.getBoolean(KEY_VIBRATION, default)
 
-    /** Stores the three values as they were sent. */
-    fun save(tMaxInput: String, azimuthInput: String, vibrationOn: Boolean) {
+    /** Stored transfer method (transfer test): true = socket; [default] if nothing was stored yet. */
+    fun useSocket(default: Boolean): Boolean = prefs.getBoolean(KEY_SOCKET, default)
+
+    /** Stores the values as they were sent. */
+    fun save(tMaxInput: String, azimuthInput: String, vibrationOn: Boolean, useSocket: Boolean = false) {
         prefs.edit()
             .putString(KEY_TMAX, tMaxInput)
             .putString(KEY_AZIMUTH, azimuthInput)
             .putBoolean(KEY_VIBRATION, vibrationOn)
+            .putBoolean(KEY_SOCKET, useSocket)
             .apply()
     }
 }

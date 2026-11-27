@@ -11,11 +11,14 @@ class PhoneSwimController(private val store: PhoneParamsStore) {
 
     /** Vibration feedback on the watch during a swim; sent with the other params. */
     var vibrationOn by mutableStateOf(store.vibrationOn(true))
+
+    /** Transfer test: how the watches send the CSV (true = socket, false = Data Layer); sent with the params. */
+    var useSocket by mutableStateOf(store.useSocket(false))
     var statusText by mutableStateOf("Ready to record swim")
 
     /** Keeps the current field values on the phone; called when they are sent to the watches. */
     fun saveParams() {
-        store.save(tMaxInput.trim(), azimuthInput.trim(), vibrationOn)
+        store.save(tMaxInput.trim(), azimuthInput.trim(), vibrationOn, useSocket)
     }
 
     /** Tmax in seconds; null if the input is not a finite number > 0. */
@@ -30,12 +33,14 @@ class PhoneSwimController(private val store: PhoneParamsStore) {
 
     private fun vibText(vibrationOn: Boolean) = if (vibrationOn) "on" else "off"
 
+    private fun viaText() = if (useSocket) "Socket" else "Data Layer"
+
     fun onParamsSending(tMaxVal: Double, azimuthDeg: Double, vibrationOn: Boolean = true) {
-        statusText = "Sending params (Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)})..."
+        statusText = "Sending params (Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)}, ${viaText()})..."
     }
 
     fun onParamsSent(tMaxVal: Double, azimuthDeg: Double, vibrationOn: Boolean = true) {
-        statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)}"
+        statusText = "Params sent: Tmax=${tMaxVal}s, Azimuth=${azimuthDeg} deg, Vibration ${vibText(vibrationOn)}, ${viaText()}"
     }
 
     // ---- Temporary: phone-side GO SWIM, kept until the watch button start is confirmed ----

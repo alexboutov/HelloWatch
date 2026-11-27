@@ -74,6 +74,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier, refreshKey: Int = 0) {
             tMaxVal = tMaxVal,
             azimuthDeg = azimuthDeg,
             vibrationOn = vibrationOn,
+            useSocket = controller.useSocket,
             onSuccess = { controller.onParamsSent(tMaxVal, azimuthDeg, vibrationOn) },
             onFailure = { msg -> controller.onError("Params Err", msg) }
         )
@@ -98,6 +99,7 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier, refreshKey: Int = 0) {
             tMaxVal = tMaxVal,
             azimuthDeg = azimuthDeg,
             vibrationOn = controller.vibrationOn,
+            useSocket = controller.useSocket,
             onSuccess = {
                 syncClient.sendSwimCommand(
                     command = command,
@@ -154,6 +156,14 @@ fun PhoneSwimControlScreen(modifier: Modifier = Modifier, refreshKey: Int = 0) {
                 checked = controller.vibrationOn,
                 onCheckedChange = { controller.vibrationOn = it }
             )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Transfer test: how the watches send the CSV; takes effect when the params are sent.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = if (controller.useSocket) "Transfer: Socket" else "Transfer: Data Layer")
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(checked = controller.useSocket, onCheckedChange = { controller.useSocket = it })
         }
         Spacer(modifier = Modifier.height(16.dp))
 
